@@ -227,6 +227,134 @@ ROCm containers come with pre-installed optimized libraries. Installing conflict
 - Try the template when it's ready
 - Contribute real-world testing results
 
+## Changes in Volume Mounting
+
+### The Problem: Ubuntu 24.04 and UID Conflicts
+
+When porting from the CUDA template, we encountered significant permission issues that the CUDA template didn't have. The root cause was a fundamental difference in base images:
+
+**CUDA Template Reality**:
+- NVIDIA PyTorch containers run as root by default
+- No pre-existing user at UID 1000
+- The CUDA template creates a user at UID 2112 and uses group-based sharing
+
+**ROCm Template Challenge**:
+- ROCm containers use Ubuntu 24.04 as the base
+- Ubuntu 24.04 ships with a pre-existing `ubuntu` user at UID 1000
+- This caused a cascade of permission problems
+
+### The Bugs We Discovered
+
+#### 1. common-utils Feature Falls Back to UID 1001
+
+**Issue**: [common-utils doesn't work on Ubuntu 24.04](https://github.com/devcontainers/features/issues/1265)
+
+When the `common-utils` devcontainer feature tries to create a user with UID 1000 (to match the typical Linux host user), but that UID is already taken by the `ubuntu` user, it silently falls back to creating the user at UID 1001.
+
+**Evidence**:
+```bash
+# Inside container
+uid=1001(stpousty-devcontainer) gid=1001(stpousty-devcontainer)
+
+# Files owned by wrong user
+-rw-------.  1 ubuntu ubuntu 2643 devcontainer.json
+```
+
+#### 2. updateRemoteUserUID Doesn't Work Reliably
+
+**Issues**:
+- [updateRemoteUserUID has no effect](https://github.com/microsoft/vscode-remote-release/issues/10030)
+- [updateRemoteUserUID has no effect (CLI)](https://github.com/devcontainers/cli/issues/874)
+- [Massive chown happening even with updateRemoteUserUID = false](https://github.com/microsoft/vscode-remote-release/issues/7390)
+
+Setting `"updateRemoteUserUID": false` in devcontainer.json should disable VSCode's automatic UID matching, but multiple GitHub issues show it doesn't work consistently. In some cases, it still changes UIDs; in other cases, it doesn't change them when it should.
+
+#### 3. UID Update Skipped When GID Already Exists
+
+**Issue**: [updateRemoteUserUID does not work if gid on host matches a gid inside the container](https://github.com/devcontainers/cli/issues/494)
+
+VSCode's automatic UID matching will skip the update if the host's GID already exists inside the container, even if the UID doesn't match. Since Ubuntu 24.04 has group `ubuntu` at GID 1000, and most Linux hosts have the user's primary group at GID 1000, this condition is met and UID updating is skipped.
+
+### The Solution: Delete Ubuntu User Before Creating Container User
+
+**Workaround** (from [devcontainers/images #1056](https://github.com/devcontainers/images/issues/1056)):
+
+Instead of fighting with VSCode's buggy UID matching, we use a Dockerfile wrapper that deletes the `ubuntu` user before the `common-utils` feature runs:
+
+```dockerfile
+FROM rocm/pytorch:rocm7.1_ubuntu24.04_py3.13_pytorch_release_2.9.1
+
+# Workaround for Ubuntu 24.04 having pre-existing ubuntu user at UID 1000
+RUN touch /var/mail/ubuntu && chown ubuntu /var/mail/ubuntu && userdel -r ubuntu
+```
+
+Then in `devcontainer.json`, we use:
+```json
+{
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "username": "stpousty-devcontainer",
+      "uid": "2112",
+      "gid": "2112"
+    }
+  }
+}
+```
+
+**How It Works**:
+1. Dockerfile deletes the `ubuntu` user, freeing UID 1000
+2. `common-utils` creates our user with UID 2112 and GID 2112 (no conflict)
+3. VSCode's automatic UID matching adjusts it to match the host UID (typically 1000)
+4. Result: Container user has UID 1000, matching host, giving perfect permission alignment
+
+### Why This Is Simpler Than the CUDA Template Approach
+
+**CUDA Template** (complex group-based sharing):
+- Creates container user at UID 2112 (different from host)
+- Creates a shared group with host's GID (1000)
+- Adds container user to shared group
+- Sets files to be group-writable
+- Requires complex `setup-environment.sh` script with `chown` and `chmod` commands
+
+**ROCm Template** (direct UID matching):
+- Deletes `ubuntu` user to free UID 1000
+- Lets VSCode's UID matching do its job
+- Container user gets UID 1000 = host user UID 1000
+- No shared group needed
+- No permissions setup script needed
+- Files are directly owned by container user, accessible by host user
+
+**Result**: We eliminated the entire "Permissions Block" from `setup-environment.sh` because it's no longer needed!
+
+### References
+
+**Ubuntu 24.04 UID Conflict**:
+- [uid mapping problem with ubuntu-24.04 base image](https://github.com/devcontainers/images/issues/1056)
+- [common-utils doesn't work on Ubuntu 24.04](https://github.com/devcontainers/features/issues/1265)
+
+**VSCode UID Matching Issues**:
+- [updateRemoteUserUID has no effect](https://github.com/microsoft/vscode-remote-release/issues/10030)
+- [updateRemoteUserUID has no effect (CLI)](https://github.com/devcontainers/cli/issues/874)
+- [updateRemoteUserUID does not work if gid on host matches container gid](https://github.com/devcontainers/cli/issues/494)
+- [Massive chown with updateRemoteUserUID = false](https://github.com/microsoft/vscode-remote-release/issues/7390)
+
+**General Permission Issues**:
+- [DevContainer: Changing UID/GID fails when GID exists](https://github.com/microsoft/vscode-remote-release/issues/7284)
+- [groupadd: GID '1000' already exists](https://github.com/devcontainers/features/issues/531)
+
+**Educational Resources**:
+- [Dev Containers Part 3: UIDs and file ownership](https://www.happihacking.com/blog/posts/2024/dev-containers-uids/)
+- [Sync DevContainer User With Your Host — Done Right](https://buildsoftwaresystems.com/post/sync-linux-devcontainer-user-with-host/)
+
+### Key Takeaway for Blog Post
+
+This is a perfect example of how porting between ecosystems reveals hidden assumptions. The CUDA template's complex group-based permissions were a workaround for one set of constraints, but when moving to ROCm with Ubuntu 24.04, we discovered bugs in the devcontainer tooling itself. The solution ended up being **simpler** than the original - a nice surprise during a port!
+
+The lesson: Sometimes the "best practice" from one environment needs to be completely rethought in another, and the new solution might actually be cleaner.
+
 ## Future Blog Post Topics
 
 - Part 2: Porting the setup scripts and dependency management

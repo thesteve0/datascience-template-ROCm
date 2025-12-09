@@ -2,27 +2,35 @@
 
 This file tracks the roadmap for porting the CUDA data science template to ROCm with improvements.
 
-## Phase 1: Core Template Files Port
+## Phase 1: Core Template Files Port ✅ COMPLETED
 
 ### Setup Scripts
-- [ ] Port `setup-project.sh` from CUDA template
-  - [ ] Adapt for ROCm-specific directory structure
-  - [ ] Add JetBrains IDE option during setup
-  - [ ] Update placeholder variables for ROCm
-- [ ] Port `setup-environment.sh` from CUDA template
-  - [ ] Update for ROCm environment variables
-  - [ ] Configure HIP/ROCm paths
-  - [ ] Set up ROCm-specific cache directories
-- [ ] Port `cleanup-script.sh` from CUDA template
-  - [ ] Update volume names for ROCm project
-  - [ ] Ensure compatibility with both IDE configurations
+- [x] Port `setup-project.sh` from CUDA template
+  - [x] Adapt for ROCm-specific directory structure
+  - [x] Add JetBrains IDE option during setup
+  - [x] Update placeholder variables for ROCm
+- [x] Port `setup-environment.sh` from CUDA template
+  - [x] Update for ROCm environment variables
+  - [x] Configure HIP/ROCm paths
+  - [x] Set up ROCm-specific cache directories
+- [x] Port `cleanup-script.sh` from CUDA template
+  - [x] Update volume names for ROCm project
+  - [x] Ensure compatibility with both IDE configurations (Docker/Podman auto-detection)
 
 ### Dependency Management
-- [ ] Port `resolve-dependencies.py` from CUDA template
-  - [ ] Identify ROCm PyTorch pre-installed packages
-  - [ ] Create ROCm package conflict list
-  - [ ] Test filtering with common ML libraries (transformers, diffusers, etc.)
-  - [ ] Handle ROCm-specific package names (torch vs torch-rocm)
+- [x] Port `resolve-dependencies.py` from CUDA template
+  - [x] Identify ROCm PyTorch pre-installed packages
+  - [x] Create ROCm package conflict list
+  - [x] Test filtering with common ML libraries (transformers, diffusers, etc.)
+  - [x] Handle ROCm-specific package names (torch vs torch-rocm)
+
+### Testing Results (Dec 9, 2025)
+- [x] All shell scripts validated (bash -n)
+- [x] Python script validated (py_compile)
+- [x] JSON configuration validated
+- [x] End-to-end test: setup-project.sh creates correct structure
+- [x] Template placeholder replacement verified
+- [x] Dependency filtering tested and working
 
 ## Phase 2: DevContainer Configurations
 
@@ -39,13 +47,13 @@ This file tracks the roadmap for porting the CUDA data science template to ROCm 
 - [ ] Document exact ROCm version and PyTorch version used
 
 ### VSCode DevContainer
-- [ ] Port `devcontainer.json` template
-  - [ ] Update base image to ROCm container
-  - [ ] Configure ROCm GPU runtime arguments
-  - [ ] Update environment variables (CUDA → HIP/ROCm)
-  - [ ] Configure persistent volumes (models, datasets, cache)
-  - [ ] Add VSCode extensions for Python/ML development
-  - [ ] Configure port forwarding (TensorBoard, Jupyter, etc.)
+- [x] Port `devcontainer.json` template
+  - [x] Update base image to ROCm container (rocm/pytorch:rocm7.1-py3.11-pytorch-2.6.0-ubuntu22.04)
+  - [x] Configure ROCm GPU runtime arguments (--device=/dev/kfd, --device=/dev/dri)
+  - [x] Update environment variables (CUDA → HIP/ROCm)
+  - [x] Configure persistent volumes (models, datasets, cache)
+  - [x] Add VSCode extensions for Python/ML development
+  - [x] Configure port forwarding (TensorBoard, Jupyter, etc.)
 - [ ] Test VSCode devcontainer functionality
   - [ ] Container builds successfully
   - [ ] GPU access works (`rocm-smi` visible)
@@ -96,10 +104,10 @@ This file tracks the roadmap for porting the CUDA data science template to ROCm 
 ## Phase 4: Testing & Validation
 
 ### Basic Functionality Tests
-- [ ] Test setup-project.sh creates correct structure
-- [ ] Test VSCode devcontainer workflow end-to-end
-- [ ] Test JetBrains devcontainer workflow end-to-end
-- [ ] Test dependency resolution with various packages
+- [x] Test setup-project.sh creates correct structure
+- [ ] Test VSCode devcontainer workflow end-to-end (requires running container)
+- [ ] Test JetBrains devcontainer workflow end-to-end (requires JetBrains setup)
+- [x] Test dependency resolution with various packages (mock test passed)
 
 ### ML Workflow Tests
 - [ ] Test PyTorch training on GPU

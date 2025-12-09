@@ -1,0 +1,87 @@
+{
+  "name": "{{PROJECT_NAME}} ROCm PyTorch ML Development",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "username": "{{DEV_USER}}",
+      "uid": "{{DEV_UID}}",
+      "gid": "{{DEV_UID}}",
+      "upgradePackages": false
+    }
+  },
+
+  "runArgs": [
+    "--device=/dev/kfd",
+    "--device=/dev/dri",
+    "--group-add=video",
+    "--ipc=host",
+    "--cap-add=SYS_PTRACE",
+    "--security-opt=seccomp=unconfined",
+    "--memory=20g",
+    "--cpus=8",
+    "--ulimit=memlock=-1",
+    "--ulimit=stack=67108864",
+    "--mount", "type=bind,source=${env:SSH_AUTH_SOCK},target=/tmp/ssh-agent.sock"
+  ],
+
+  "containerEnv": {
+    "HIP_VISIBLE_DEVICES": "0",
+    "HSA_OVERRIDE_GFX_VERSION": "11.0.0",
+    "ROCM_HOME": "/opt/rocm",
+    "PYTHONPATH": "/workspaces/{{PROJECT_NAME}}/src",
+    "HF_HOME": "/workspaces/{{PROJECT_NAME}}/.cache/huggingface",
+    "TORCH_HOME": "/workspaces/{{PROJECT_NAME}}/.cache/torch",
+    "TRANSFORMERS_CACHE": "/workspaces/{{PROJECT_NAME}}/.cache/huggingface/transformers",
+    "SSH_AUTH_SOCK": "/tmp/ssh-agent.sock"
+  },
+
+  "mounts": [
+    "source={{PROJECT_NAME}}-models,target=/workspaces/{{PROJECT_NAME}}/models,type=volume",
+    "source={{PROJECT_NAME}}-datasets,target=/workspaces/{{PROJECT_NAME}}/datasets,type=volume",
+    "source={{PROJECT_NAME}}-cache-hf,target=/workspaces/{{PROJECT_NAME}}/.cache/huggingface,type=volume",
+    "source={{PROJECT_NAME}}-cache-torch,target=/workspaces/{{PROJECT_NAME}}/.cache/torch,type=volume"
+  ],
+
+  "workspaceFolder": "/workspaces/{{PROJECT_NAME}}",
+  "remoteUser": "{{DEV_USER}}",
+
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/bin/python",
+        "python.terminal.activateEnvironment": false,
+        "files.watcherExclude": {
+          "**/.cache/**": true,
+          "**/models/**": true,
+          "**/datasets/**": true
+        },
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "editor.formatOnSave": true,
+        "python.formatting.provider": "black",
+        "python.linting.enabled": true,
+        "python.linting.flake8Enabled": true
+      },
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.black-formatter",
+        "ms-python.flake8",
+        "github.copilot",
+        "ms-toolsai.jupyter"
+      ]
+    }
+  },
+
+  "forwardPorts": [6006, 8888],
+
+  "postCreateCommand": ".devcontainer/setup-environment.sh",
+
+  "hostRequirements": {
+    "gpu": "optional",
+    "memory": "24gb"
+  }
+}
