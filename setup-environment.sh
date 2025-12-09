@@ -19,7 +19,15 @@ else
 fi
 
 # Update system packages
-sudo apt-get update && sudo apt-get install -y \
+# Note: The ROCm container includes AMD internal repos (compute-artifactory.amd.com)
+# that are unreachable outside AMD's network. This is expected and won't affect
+# functionality. We preserve the repo files for documentation purposes.
+# --allow-releaseinfo-change: Handles repos with updated release info
+# --no-upgrade: Only install packages if not already present (preserves ROCm versions)
+echo "Updating system packages (AMD internal repos may show errors - this is expected)..."
+sudo apt-get update --allow-releaseinfo-change 2>&1 || true
+
+sudo apt-get install -y --no-upgrade \
     git curl wget build-essential \
     && sudo rm -rf /var/lib/apt/lists/*
 
