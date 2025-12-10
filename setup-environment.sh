@@ -3,12 +3,25 @@ set -e
 
 echo "Setting up {{PROJECT_NAME}} ROCm PyTorch ML environment..."
 
-# Note: No permissions block needed!
+# Note: No permissions block needed for workspace files!
 # By deleting the ubuntu user in the Dockerfile, common-utils creates our user
 # with UID/GID that matches the host (1000:1000), giving automatic permission alignment.
 # This is simpler than the CUDA template's group-sharing approach.
 
 WORKSPACE_DIR="/workspaces/{{PROJECT_NAME}}"
+
+# Fix ownership of AMD's pre-configured venv
+# The base container has a venv at /opt/venv owned by root. We need to make it
+# writable by the devcontainer user so they can install packages without sudo.
+#
+# SECURITY NOTE: This devcontainer is designed for DEVELOPMENT ONLY.
+# The user has passwordless sudo access (standard for devcontainers) for convenience.
+# DO NOT use this configuration for production deployments - production containers should:
+#   - Run as non-root user without sudo access
+#   - Have read-only filesystems where possible
+#   - Follow principle of least privilege
+echo "Configuring Python virtual environment permissions..."
+sudo chown -R $(whoami):$(whoami) /opt/venv
 
 # Generate rocm-provided.txt
 echo "Extracting ROCm-provided packages..."
@@ -31,13 +44,11 @@ sudo apt-get install -y --no-upgrade \
     git curl wget build-essential \
     && sudo rm -rf /var/lib/apt/lists/*
 
-# Install uv package manager
-echo "Installing uv package manager..."
-curl -LsSf https://astral.sh/uv/install.sh | sh
-export PATH="$HOME/.local/bin:$PATH"
-
 # Install development tools
-sudo pip install --no-cache-dir black flake8 pre-commit
+# Note: AMD's ROCm container already includes uv package manager and uses a
+# pre-configured venv at /opt/venv. After fixing venv ownership above,
+# pip/uv install works without sudo.
+uv pip install --no-cache-dir black flake8 pre-commit
 
 # Configure git identity
 echo "Configuring git identity..."

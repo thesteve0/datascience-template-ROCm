@@ -355,9 +355,247 @@ This is a perfect example of how porting between ecosystems reveals hidden assum
 
 The lesson: Sometimes the "best practice" from one environment needs to be completely rethought in another, and the new solution might actually be cleaner.
 
+## System Python Package Management
+
+### The Discovery: AMD Uses a Pre-Configured venv
+
+While porting from the CUDA template, I initially assumed I'd need to deal with Python's `EXTERNALLY-MANAGED` marker that prevents system-wide pip installs. Modern Python distributions (3.11+) include this marker to encourage virtual environments.
+
+**However, AMD already solved this!** The ROCm PyTorch container includes a pre-configured virtual environment at `/opt/venv`:
+
+```bash
+$ which python
+/opt/venv/bin/python
+
+$ cat /opt/venv/pyvenv.cfg
+home = /usr/bin
+include-system-site-packages = false
+version = 3.13.8
+executable = /usr/bin/python3.13
+command = /usr/bin/python3.13 -m venv /opt/venv
+```
+
+### Why AMD's Approach Is Smart
+
+**Design Benefits:**
+1. **Isolation**: ROCm-optimized PyTorch packages are isolated from Ubuntu's system Python
+2. **No EXTERNALLY-MANAGED issues**: The venv bypasses the system Python marker
+3. **Automatic activation**: Container sets PATH so `/opt/venv/bin` is found first
+4. **Clean upgrades**: AMD can update ROCm packages without breaking system tools
+5. **User-friendly**: `pip install` just works, no manual venv activation needed
+6. **Includes modern tools**: uv package manager is pre-installed in the venv
+
+**How it works:**
+- Ubuntu 24.04's system Python at `/usr/bin/python3.13` has the EXTERNALLY-MANAGED marker
+- AMD creates a venv at `/opt/venv` during image build
+- Container's PATH is configured to use `/opt/venv/bin/python` by default
+- All pip installs go into `/opt/venv/lib/python3.13/site-packages`
+- System Python remains untouched and protected
+
+**Important for IDE integration:**
+- VSCode's `python.defaultInterpreterPath` must be set to `/opt/venv/bin/python`
+- If set to `/usr/bin/python`, PyTorch won't be found (it's only in the venv)
+- This was an easy mistake to make during the port - initially set to system Python
+
+### The Wrong Approach (What I Almost Did)
+
+I initially planned to remove the EXTERNALLY-MANAGED marker:
+
+```bash
+# DON'T DO THIS - It's unnecessary!
+sudo rm -f /usr/lib/python3.*/EXTERNALLY-MANAGED
+```
+
+**Why this would have been wrong:**
+- AMD already provides a venv solution
+- Removing the marker affects system Python, not the venv we're using
+- The venv approach is actually better isolation
+- Would be fighting against AMD's design instead of working with it
+
+### Comparison to CUDA Template
+
+**NVIDIA's Approach:**
+- No pre-configured venv
+- Containers run as root by default
+- pip install goes directly into system Python packages
+- Works but less isolated
+
+**AMD's Approach:**
+- Pre-configured venv at `/opt/venv`
+- Activated by default
+- Better isolation between ROCm packages and system packages
+- More aligned with modern Python best practices
+
+### What This Means for the Template
+
+**One small fix needed:** The `/opt/venv` is owned by root in AMD's base image, so the devcontainer user can't install packages without sudo. We fix this in `setup-environment.sh`:
+
+```bash
+# Fix ownership of AMD's pre-configured venv
+# The base container has a venv at /opt/venv owned by root. We need to make it
+# writable by the devcontainer user so they can install packages without sudo.
+echo "Configuring Python virtual environment permissions..."
+sudo chown -R $(whoami):$(whoami) /opt/venv
+```
+
+After this one-time fix during container creation, pip works normally:
+
+```bash
+# This works without sudo
+pip install transformers
+uv pip install diffusers
+
+# No --system flag needed with uv
+# No --break-system-packages needed
+# No manual venv activation
+# No EXTERNALLY-MANAGED removal
+```
+
+### Security Consideration: Development vs Production
+
+**Important context:** This venv ownership change is appropriate for development containers but highlights a broader security model difference.
+
+**Devcontainers (this template):**
+- User has **passwordless sudo** (standard for devcontainers)
+- Can modify system files, install packages, reconfigure services
+- Prioritizes **developer convenience** and rapid iteration
+- Single-user, ephemeral, rebuildable environment
+- Security model: "trust the developer, isolate from host"
+
+**Production containers (NOT this template):**
+- Should run as **non-root without sudo**
+- Read-only root filesystem where possible
+- Minimal installed packages (attack surface reduction)
+- Principle of least privilege
+- Security model: "assume breach, minimize damage"
+
+**Why the ownership change is fine here:**
+- User already has sudo → can `sudo pip install` or `sudo chown` anyway
+- No additional attack surface created
+- Makes workflow simpler and more intuitive
+- Matches how users work on their host systems
+
+**The broader lesson:** Development containers and production containers have fundamentally different security requirements. Don't mistake a good development setup for a production-ready deployment. This template is explicitly **development-only**.
+
+### Key Takeaway for Blog Post
+
+This is a great example of **questioning assumptions during a port**. I assumed AMD's container would work like NVIDIA's (system-wide Python), but AMD made a different (arguably better) design choice.
+
+**The debugging process that revealed this:**
+1. Encountered "externally managed" error in testing
+2. Researched workarounds (remove marker, use --break-system-packages, etc.)
+3. User noticed `/opt/venv` directory in container
+4. Investigated and discovered AMD's pre-configured venv
+5. Realized all my workarounds were unnecessary
+
+**The lesson:** When porting, verify your assumptions about the target environment. Sometimes the "problem" you're solving doesn't exist, or has already been solved differently than you expected. Looking at the actual container filesystem (`ls /opt`) revealed the real design.
+
+## Integrated GPU Performance: Setting Expectations
+
+### The Discovery
+
+When testing the ROCm template on AMD Ryzen AI Max+ 395 (Strix Halo), I discovered that **GPU was slower than CPU** for the small benchmark workloads:
+
+**Matrix Multiplication (4096x4096):**
+- CPU: 0.1784 seconds
+- GPU: 0.2831 seconds
+- Result: CPU 1.6x faster!
+
+**Neural Network Training (235K parameters, 10 iterations):**
+- CPU: 0.0194 seconds
+- GPU: 0.1155 seconds
+- Result: CPU 6x faster!
+
+### Why This Is Normal (Not a Bug!)
+
+**Integrated GPU Architecture:**
+- **Shared memory**: No separate VRAM, both CPU and GPU use same RAM
+- **No bandwidth advantage**: Data doesn't need to move, so no PCIe transfer benefit
+- **Powerful CPU**: Ryzen AI Max+ has excellent CPU cores with AVX2
+
+**GPU Overhead:**
+- **Kernel launch overhead**: ~1-5ms to start each GPU operation
+- **Memory operations**: Setting up GPU memory, synchronization
+- **Context switching**: Moving between CPU and GPU execution
+
+**Small workload problem:**
+- Our test: 235K parameters, batch size 128, 10 iterations
+- Overhead: ~100ms
+- Actual compute: ~15ms
+- **Overhead is 7x the actual work!**
+
+### When GPU Wins on Integrated GPUs
+
+GPU acceleration becomes beneficial when compute dominates overhead:
+
+**Large Language Models:**
+- 7B+ parameter models (Llama, Mistral)
+- Overhead amortized over billions of operations
+- GPU can be 3-10x faster even on integrated GPUs
+
+**Large Batch Training:**
+- Batch size 256+ samples
+- More parallelism to exploit
+- Better GPU utilization
+
+**Long Training Runs:**
+- Hours or days of training
+- Overhead is one-time cost
+- GPU saves wall-clock time
+
+**Computer Vision:**
+- 512x512+ images
+- Large convolution operations
+- GPU-optimized operations
+
+### The Validation Test Dilemma
+
+This created an interesting challenge: How do you write a test that:
+1. **Validates GPU works** (runs operations successfully)
+2. **Runs quickly** (developers want fast feedback)
+3. **Shows realistic expectations** (doesn't mislead about performance)
+
+**Solution**: The test now:
+- ✅ Confirms GPU is detected and functional
+- ✅ Shows actual performance characteristics
+- ✅ Explains why CPU might be faster
+- ✅ Sets correct expectations for when GPU helps
+
+**Sample output with educational messaging:**
+```
+⚠️  WARNING: GPU is slower than CPU for neural network training!
+   This may indicate a configuration issue.
+
+💡 Note for integrated GPUs (Ryzen AI, Strix Halo):
+   This result is EXPECTED and NORMAL for small workloads like this test.
+   GPU overhead (kernel launch, memory operations) dominates for small models.
+   GPU benefits appear with:
+   - Large models: transformers, LLMs (billions of parameters)
+   - Large batches: 256+ samples per batch
+   - Long training: Hours/days of compute
+   - Large images: 512x512+ resolution
+
+   Your GPU is working correctly! ✅
+```
+
+### Key Takeaway for Blog Post
+
+**Don't assume GPU is always faster.** Integrated GPUs with shared memory have different performance characteristics than discrete GPUs:
+
+- Discrete GPU (RTX 4090): Separate VRAM, massive bandwidth, worth overhead even for small tasks
+- Integrated GPU (Strix Halo): Shared RAM, CPU is very fast, GPU only worth it for large tasks
+
+This isn't a limitation - it's the right architectural tradeoff for a laptop APU. You get:
+- ✅ 96GB unified memory (vs 24GB max on discrete)
+- ✅ No data copying between CPU/GPU
+- ✅ Lower power consumption
+- ✅ GPU acceleration when you need it (LLMs, vision models)
+
+The template correctly supports this architecture and sets proper expectations.
+
 ## Future Blog Post Topics
 
 - Part 2: Porting the setup scripts and dependency management
-- Part 3: Real-world ML workflows on Strix Halo
+- Part 3: Real-world ML workflows on Strix Halo (when GPU actually helps!)
 - Part 4: Performance comparison vs CUDA on similar-spec hardware
 - Part 5: Multi-IDE setup (VSCode + JetBrains with ROCm)

@@ -188,12 +188,12 @@ if [ -n "$CLONE_REPO" ]; then
     echo "Dependency Management (External Repo):"
     echo "  1. Create requirements.txt with project dependencies"
     echo "  2. In container: python scripts/resolve-dependencies.py requirements.txt"
-    echo "  3. In container: uv pip install --system -r requirements-filtered.txt"
+    echo "  3. In container: uv pip install -r requirements-filtered.txt"
 else
     echo "Dependency Management:"
     echo "  1. Create requirements.txt with your ML dependencies"
     echo "  2. In container: python scripts/resolve-dependencies.py requirements.txt"
-    echo "  3. In container: uv pip install --system -r requirements-filtered.txt"
+    echo "  3. In container: uv pip install -r requirements-filtered.txt"
 fi
 
 echo ""
