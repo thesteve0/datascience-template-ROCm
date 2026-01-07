@@ -593,9 +593,450 @@ This isn't a limitation - it's the right architectural tradeoff for a laptop APU
 
 The template correctly supports this architecture and sets proper expectations.
 
-## Future Blog Post Topics
+## The Package Overwrite Problem: When Modern Package Managers Break GPU Support
+
+### The Discovery: uv Silently Broke ROCm
+
+After implementing `uv` support for modern Python dependency management, I discovered a critical issue: running `uv add docling` in a fresh project **overwrote the pre-installed ROCm PyTorch with CUDA PyTorch** and installed 15 NVIDIA CUDA libraries on an AMD GPU system.
+
+**What happened:**
+1. Created fresh standalone project
+2. Container setup ran successfully (ROCm PyTorch 2.9.1+rocm7.1.0 installed)
+3. User ran: `uv add docling`
+4. uv resolved docling's dependencies, found it requires PyTorch
+5. uv defaulted to PyPI's torch package (CUDA version)
+6. Installed `torch==2.9.1` from PyPI + 15 NVIDIA packages
+7. ROCm PyTorch overwritten → GPU support broken silently
+
+**Evidence from uv.lock:**
+```toml
+[[package]]
+name = "torch"
+version = "2.9.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "nvidia-cublas-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "nvidia-cuda-cupti-cu12" },
+    { name = "nvidia-cudnn-cu12" },
+    # ... 12 more NVIDIA packages
+]
+```
+
+This wasn't just torch - **137 packages** that came pre-installed with the ROCm container were at risk.
+
+### Why This Is a Fundamental Problem
+
+**The core issue:** Package managers (pip, uv) don't know that packages are already installed in special optimized forms.
+
+**ROCm container structure:**
+- AMD builds PyTorch with ROCm support from source
+- Installs to `/opt/venv` as local wheel: `torch-2.9.1+rocm7.1.0-cp313-linux_x86_64.whl`
+- Also includes optimized: numpy, scipy, pillow, opencv, etc.
+- Total: ~137 pre-built, optimized packages
+
+**Package manager behavior:**
+- `uv add transformers` sees transformers depends on torch
+- Queries PyPI for torch
+- PyPI only has CUDA wheels for Linux x86_64
+- uv downloads and installs, overwriting `/opt/venv/lib/python3.13/site-packages/torch`
+- ROCm support gone, NVIDIA libraries installed
+
+**This affects ALL package managers:**
+- ✗ `pip install transformers` - same problem
+- ✗ `uv add transformers` - same problem
+- ✗ `poetry add transformers` - same problem
+- ✗ `conda install transformers` - might work IF using ROCm-specific channel
+
+### The First Solution: resolve-dependencies.py
+
+The template already had a script to handle this for `requirements.txt` workflow:
+
+**How it worked:**
+1. User creates `requirements.txt` with desired packages
+2. Runs `python scripts/resolve-dependencies.py requirements.txt`
+3. Script reads `rocm-provided.txt` (list of pre-installed packages)
+4. Filters out any packages already provided by ROCm
+5. Creates `requirements-filtered.txt`
+6. User installs: `uv pip install -r requirements-filtered.txt`
+
+**Example:**
+```bash
+# requirements.txt
+transformers>=4.30.0
+torch>=2.0.0
+numpy>=1.24.0
+
+# After resolve-dependencies.py:
+# requirements-filtered.txt
+transformers>=4.30.0
+# torch>=2.0.0  # Skipped: ROCm provides torch==2.9.1+rocm7.1.0
+# numpy>=1.24.0  # Skipped: ROCm provides numpy==2.1.2
+```
+
+**Why this wasn't enough:**
+- ✗ Only works with `requirements.txt` workflow (old-school)
+- ✗ Doesn't work with modern `uv add` commands
+- ✗ Manual process - users must remember to run the script
+- ✗ Easy to forget and accidentally break GPU support
+- ✗ Against the goal of supporting modern Python workflows
+
+### Three Solution Options Considered
+
+#### Option 1: Auto-configure uv with override-dependencies (CHOSEN)
+
+**How it works:**
+- Use uv's `override-dependencies` feature
+- Inject configuration into `pyproject.toml` automatically during setup
+- Use impossible environment marker: `sys_platform == 'never'`
+- This tells uv: "never install this package"
+
+**Implementation:**
+```bash
+# In setup-environment.sh after `uv init`
+{
+    echo ""
+    echo "# Auto-generated to protect ROCm-provided packages"
+    echo "[tool.uv]"
+    echo "override-dependencies = ["
+
+    # Read all packages from rocm-provided.txt
+    while IFS='==' read -r package version; do
+        [[ -z "$package" ]] && continue
+        package=$(echo "$package" | xargs)
+        echo "    \"${package}; sys_platform == 'never'\","
+    done < rocm-provided.txt
+
+    echo "]"
+} >> pyproject.toml
+```
+
+**Generated pyproject.toml:**
+```toml
+[project]
+name = "my-project"
+dependencies = ["docling>=2.64.1"]
+
+# Auto-generated to protect ROCm-provided packages
+[tool.uv]
+override-dependencies = [
+    "torch; sys_platform == 'never'",
+    "torchvision; sys_platform == 'never'",
+    "torchaudio; sys_platform == 'never'",
+    "numpy; sys_platform == 'never'",
+    "scipy; sys_platform == 'never'",
+    # ... ~137 packages total
+]
+```
+
+**How override-dependencies works:**
+- When uv resolves dependencies and encounters torch
+- Checks override-dependencies
+- Sees `torch; sys_platform == 'never'`
+- Marker condition is never true → skips installation
+- Pre-installed ROCm torch is used instead
+
+**Pros:**
+- ✅ Works with modern `uv add` workflow
+- ✅ Automatic - no manual steps required
+- ✅ Bulletproof - uv enforces it, can't be forgotten
+- ✅ Fast - no downloads, uses pre-installed packages
+- ✅ Offline-capable - no network needed
+- ✅ Protects ALL 137 ROCm packages automatically
+- ✅ Future-proof - new packages auto-protected
+
+**Cons:**
+- ⚠️ Silent behavior - users won't know torch was blocked
+- ⚠️ Lockfile won't include torch (complicates sharing)
+- ⚠️ Can't upgrade PyTorch via uv (must use container updates)
+- ⚠️ Large override list (~137 lines in pyproject.toml)
+- ⚠️ Version conflicts give cryptic errors
+
+**Example cryptic error:**
+```
+User: uv add some-package-requiring-torch-2.5
+Error: Could not resolve dependencies
+  Reason: no compatible version found for torch>=2.5.0
+
+# Actual reason: ROCm has torch 2.3, override blocks newer install
+# Error doesn't mention ROCm or override-dependencies
+```
+
+#### Option 2: Disable uv Project Mode Entirely
+
+**How it works:**
+- Remove `uv init` from setup
+- Force users to only use `requirements.txt` + `resolve-dependencies.py`
+- No `pyproject.toml`, no `uv add` commands allowed
+
+**Pros:**
+- ✅ Simple - proven workflow already exists
+- ✅ Explicit - users see what's being filtered
+- ✅ Safe - impossible to accidentally install CUDA
+
+**Cons:**
+- ❌ Feels outdated - back to requirements.txt in 2025
+- ❌ Can't use modern uv features (`uv lock`, `uv sync`, `uv tree`)
+- ❌ Manual workflow - must remember to run filter script
+- ❌ Goes against why we added uv support
+
+**Verdict:** Rejected - defeats the purpose of modernizing to uv
+
+#### Option 3: Use Custom ROCm PyTorch Index
+
+**How it works:**
+- Configure uv to use AMD's ROCm wheel index for PyTorch
+- Point to `https://download.pytorch.org/whl/rocm7.1`
+- When packages need torch, pull from AMD index instead of PyPI
+
+**Implementation:**
+```toml
+[[tool.uv.index]]
+name = "pytorch-rocm"
+url = "https://download.pytorch.org/whl/rocm7.1"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-rocm" }
+torchvision = { index = "pytorch-rocm" }
+```
+
+**Pros:**
+- ✅ torch appears in dependencies (explicit)
+- ✅ Can upgrade PyTorch: `uv add "torch>=2.5"`
+- ✅ Lockfile includes torch (better reproducibility)
+
+**Cons:**
+- ❌ Depends on AMD maintaining index (external failure point)
+- ❌ Slow - must download 2GB torch wheel
+- ❌ Overwrites pre-installed optimized version
+- ❌ AMD index may not have all ROCm versions
+- ❌ Version detection fragile (must match ROCm 7.1)
+- ❌ Network required during setup
+- ❌ If AMD index down, can't install packages
+
+**Verdict:** Rejected - too many external dependencies and failure modes
+
+### The Solution Implementation
+
+**Chose Option 1: Auto-configure override-dependencies**
+
+**Reasoning:**
+1. Best user experience - `uv add` just works
+2. No external dependencies - works offline
+3. Fast - no downloads
+4. Automatic - can't be forgotten
+5. Protects all 137 packages, not just torch
+
+**Technical details:**
+- `setup-environment.sh` generates override list from `rocm-provided.txt`
+- Runs during container creation (automatic)
+- Adds explanatory comments to generated `pyproject.toml`
+- Reports protection status: "ROCm protection for 137 packages"
+
+**Testing validation:**
+```bash
+# Before fix:
+uv add docling
+# Downloaded torch 2.9.1 + 15 NVIDIA libs (bad!)
+
+# After fix:
+uv add docling
+# Skipped torch, used pre-installed ROCm version (good!)
+python -c "import torch; print(torch.version.hip)"
+# Output: 7.1.0 (ROCm still works!)
+```
+
+### The Second Problem: uv Creating Its Own Virtual Environment
+
+After implementing override-dependencies protection, we discovered **another critical issue**: uv was creating its own `.venv/` directory in the project instead of using the container's `/opt/venv`.
+
+**What was happening:**
+1. `uv init` creates `pyproject.toml` (no venv yet)
+2. User runs `uv add transformers`
+3. uv creates `.venv/` in project directory
+4. This new `.venv/` is empty - no ROCm PyTorch
+5. Override-dependencies prevents installing torch to `.venv/`
+6. Result: No torch available at all, `import torch` fails
+
+**Why this happened:**
+Per uv documentation: *"By default, uv project commands (`uv add`, `uv sync`, etc.) ignore the currently activated virtual environment and create a `.venv` directory in the project root."*
+
+uv **completely ignores** the `VIRTUAL_ENV` environment variable. It doesn't care that `/opt/venv` is activated and in the PATH.
+
+**Initial solution attempt: UV_PROJECT_ENVIRONMENT**
+
+First, we tried setting `UV_PROJECT_ENVIRONMENT=/opt/venv` in devcontainer.json to tell uv to use the container's existing venv.
+
+```json
+"containerEnv": {
+    ...
+    "UV_PROJECT_ENVIRONMENT": "/opt/venv"
+},
+```
+
+**This caused a new problem:**
+
+```bash
+$ uv add docling
+Using CPython 3.12.3 interpreter at: /usr/bin/python3.12
+error: failed to remove directory `/opt/venv`: Permission denied (os error 13)
+```
+
+**Root cause:**
+- `pyproject.toml` from `uv init` defaulted to `requires-python = ">=3.12"`
+- System has Python 3.12 at `/usr/bin/python3.12`
+- `/opt/venv` is built with Python 3.13
+- uv detected a version mismatch and tried to recreate the venv with Python 3.12
+- This requires removing the existing Python 3.13 venv → permission error
+
+**The real solution: uv venv --allow-existing**
+
+The `--allow-existing` flag tells uv to preserve an existing virtual environment instead of recreating it. Combined with `--no-managed-python`, we can make uv use the container's existing Python without trying to download its own.
+
+**Implementation in `setup-environment.sh`:**
+
+```bash
+# Make uv aware of the existing /opt/venv without recreating it
+# --allow-existing: Preserve existing packages (ROCm PyTorch, etc.)
+# --python: Use the Python from the existing venv (3.13)
+# --no-managed-python: Don't download uv-managed Python, use existing system Python
+uv venv --allow-existing --python /opt/venv/bin/python --no-managed-python /opt/venv
+
+# Initialize project (uv will auto-detect Python version from the venv)
+uv init --no-readme
+```
+
+**How this fixes everything:**
+1. `uv venv --allow-existing` tells uv about `/opt/venv` without removing it
+2. `--python /opt/venv/bin/python` specifies Python 3.13 explicitly
+3. `--no-managed-python` prevents uv from downloading its own Python
+4. Existing packages (ROCm PyTorch, 137 optimized packages) are preserved
+5. `uv init` auto-detects Python 3.13 from the configured venv
+6. `UV_PROJECT_ENVIRONMENT=/opt/venv` tells uv to use this path for project operations
+7. `override-dependencies` prevents overwriting any ROCm packages
+
+**Layered protection strategy (3 layers):**
+- **Layer 1**: `uv venv --allow-existing` → Preserve existing venv without recreation
+- **Layer 2**: `UV_PROJECT_ENVIRONMENT=/opt/venv` → Use this venv for project operations
+- **Layer 3**: `override-dependencies` → Prevent overwriting ROCm packages
+
+All three layers needed:
+- Without Layer 1: uv tries to recreate venv → permission error
+- Without Layer 2: uv creates new `.venv/` → no ROCm packages available
+- Without Layer 3: uv overwrites torch with CUDA version → GPU support broken
+- With all three: uv uses `/opt/venv`, preserves all packages, works correctly
+
+**Final behavior:**
+```bash
+# After setup
+uv add transformers
+# Uses /opt/venv (no .venv/ created)
+# torch protected by override-dependencies
+# transformers installed to /opt/venv/
+python -c "import torch; print(torch.version.hip)"  # 7.1.0 ✓
+```
+
+**Key learning:**
+Modern package managers like uv want to **manage** virtual environments, not just use them. The `--allow-existing` flag is critical for working with pre-configured container environments. Without it, uv will try to recreate the venv to match its expectations, which breaks when the venv is pre-populated with optimized packages.
+
+### The Bigger Picture: Package Manager vs Optimized Containers
+
+This problem reveals a **fundamental tension** in the ML ecosystem:
+
+**Package Managers assume:**
+- Packages come from PyPI/conda/etc.
+- Latest version is best
+- All packages are interchangeable
+- User wants to install everything
+
+**Optimized ML Containers assume:**
+- Packages are pre-built for specific hardware
+- Specific versions are tested together
+- Replacing packages breaks optimizations
+- Some packages should never be touched
+
+**The conflict:**
+- Package managers don't know about pre-installed optimizations
+- Containers can't prevent package managers from overwriting
+- Users caught in the middle
+- No standard solution
+
+**How different ecosystems handle this:**
+
+**NVIDIA CUDA + conda:**
+- Use `conda` with nvidia/pytorch channels
+- conda aware of CUDA vs CPU packages
+- Works well but conda-only ecosystem
+
+**AMD ROCm + pip/uv:**
+- No standard ROCm channel for pip
+- AMD provides wheels at custom index
+- Requires manual configuration
+- Easy to get wrong
+
+**Apple Silicon + pip:**
+- Same problem - PyPI has x86 wheels
+- Must use platform-specific indexes
+- Conda's osx-arm64 channel helps
+
+**The template's solution:**
+- Automatically protect pre-installed packages
+- Use package manager for everything else
+- Balance convenience and safety
+- Document tradeoffs clearly
+
+### Key Takeaways for Blog Post
+
+**1. Modern != Better in all contexts**
+Modern package managers (uv, poetry) are great for general Python development, but optimized ML containers require special handling. The "modern" approach of `uv add` can actually break things without protection.
+
+**2. Automated protection is essential**
+Manual workflows (like running filter scripts) will be forgotten. The only reliable solution is automatic protection that users can't bypass or forget.
+
+**3. Trade-offs are inevitable**
+- Option 1: Silent blocking, lockfile gaps
+- Option 2: Old workflow, manual steps
+- Option 3: External dependencies, slower
+
+We chose Option 1 because the tradeoffs favor user experience over perfect dependency tracking.
+
+**4. Documentation must set expectations**
+Users need to understand:
+- Why torch isn't in their lockfile
+- Why they can't upgrade PyTorch via uv
+- What happens with version conflicts
+- When to use external repo mode instead
+
+**5. Container design matters**
+AMD's choice to pre-install optimized packages is great for performance but creates dependency management challenges. NVIDIA's approach (minimal base + user installs) has different tradeoffs.
+
+**6. The ecosystem is evolving**
+- PEP 708 (package indexes) may help in the future
+- uv adding better platform handling
+- AMD potentially publishing to PyPI with proper markers
+- This solution might become unnecessary someday
+
+### Lessons for Porting Projects
+
+**Don't assume package managers are safe:**
+Even running `pip install transformers` can break your GPU support if you're not careful. Always test after adding packages.
+
+**Read the base image carefully:**
+Understanding that ROCm uses `/opt/venv` with pre-installed packages was key to solving this correctly.
+
+**Leverage existing infrastructure:**
+We already had `rocm-provided.txt` for the requirements.txt workflow. Reusing it for uv protection avoided duplicating package lists.
+
+**Test the user workflow:**
+I discovered this by actually running `uv add docling` in a test project. Automated tests wouldn't have caught this without simulating real usage.
+
+**Solutions can be simpler than expected:**
+Option 1 is ~20 lines of bash to generate TOML. Option 3 would have been 100+ lines of version detection, error handling, and fallback logic.
+
+### Future Blog Post Topics
 
 - Part 2: Porting the setup scripts and dependency management
 - Part 3: Real-world ML workflows on Strix Halo (when GPU actually helps!)
 - Part 4: Performance comparison vs CUDA on similar-spec hardware
 - Part 5: Multi-IDE setup (VSCode + JetBrains with ROCm)
+- Part 6: The package overwrite problem and how we solved it (this section!)

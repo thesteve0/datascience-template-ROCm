@@ -170,7 +170,55 @@ my-ml-project/
 
 ### Managing Dependencies
 
-The `resolve-dependencies.py` script prevents conflicts with ROCm-provided packages:
+#### Understanding the Python Environment
+
+When you open the devcontainer, you're working inside a pre-configured environment:
+
+| Component | Location | Notes |
+|-----------|----------|-------|
+| **Virtual Environment** | `.venv/` (in project root) | Created by `setup-environment.sh`, contains ROCm packages |
+| **Python Interpreter** | `.venv/bin/python` | Python 3.13 with ROCm-optimized PyTorch |
+| **Package Manager** | `uv` | Fast, modern Python package manager |
+| **ROCm PyTorch** | Pre-installed in `.venv/` | DO NOT reinstall from PyPI |
+
+The `setup-environment.sh` script automatically:
+1. Creates a `.venv/` directory with `uv venv`
+2. Installs all ROCm-provided packages (PyTorch, torchvision, etc.) from the container
+3. Generates `rocm-provided.txt` listing protected packages
+4. Configures `pyproject.toml` with `exclude-dependencies` to prevent overwriting ROCm packages
+
+#### Adding New Packages (Recommended: uv)
+
+The modern workflow uses `uv` with `pyproject.toml`:
+
+```bash
+# 1. Add packages to pyproject.toml dependencies section
+#    Edit pyproject.toml and add to the dependencies list:
+#    dependencies = [
+#        "transformers",
+#        "docling",
+#    ]
+
+# 2. Install with uv sync
+uv sync
+```
+
+The `pyproject.toml` contains a `[tool.uv] exclude-dependencies` section that lists all ROCm-provided packages. When you add a package like `transformers` that depends on `torch`, uv sees `torch` in the exclude list and **skips installing it** - preserving your working ROCm PyTorch.
+
+**Quick add (single package):**
+```bash
+uv add transformers
+```
+
+**Verify PyTorch is still the ROCm version after installing:**
+```bash
+python -c "import torch; print(torch.__version__)"
+# Should show: 2.9.1+rocm7.1.0... (the +rocm suffix is key)
+```
+
+#### Alternative: requirements.txt Workflow
+
+For projects using `requirements.txt`, use the `resolve-dependencies.py` script:
 
 ```bash
 # 1. Add packages to requirements.txt
@@ -194,28 +242,11 @@ The script will:
 - Comment out packages already provided by ROCm
 - Show which packages were skipped
 
-#### Python Package Management
+#### Why Package Protection Matters
 
-AMD's ROCm container comes with a **pre-configured virtual environment at `/opt/venv`** that:
-- Isolates ROCm-optimized PyTorch and ML packages from system Python
-- Is activated by default (no manual activation needed)
-- Includes the `uv` package manager (faster than pip)
-- Allows `pip install` and `uv pip install` to work directly
+PyPI only hosts CUDA-built PyTorch wheels. If you run `pip install transformers` without protection, pip will see that transformers needs torch and install the CUDA version from PyPI - **breaking your ROCm GPU support**.
 
-The setup script automatically adjusts ownership of `/opt/venv` so you can install packages without sudo.
-
-This design is ideal for single-project devcontainers - you get the benefits of isolation without manual venv management.
-
-**Installing packages:**
-```bash
-# Using pip (after filtering)
-pip install -r requirements-filtered.txt
-
-# Using uv (faster, recommended)
-uv pip install -r requirements-filtered.txt
-```
-
-Note: No need for `--system` flag with uv since we're already in AMD's pre-configured venv.
+The `exclude-dependencies` list in `pyproject.toml` (or the `resolve-dependencies.py` script) prevents this by telling uv/pip to never install these packages as dependencies.
 
 ### Testing GPU Acceleration
 
@@ -477,7 +508,202 @@ docker logs <container-id>
 # VSCode: Ctrl+Shift+P → "Dev Containers: Rebuild Container"
 ```
 
-## Differences from CUDA Template
+## Complete List of Changes from CUDA Template
+
+This section documents all changes made during the port from CUDA to ROCm, categorized by reason.
+
+### Changes Required by AMD Container Architecture
+
+These changes were necessary due to how AMD builds the ROCm container differently from NVIDIA:
+
+1. **Pre-configured Virtual Environment (`/opt/venv`)**
+   - **CUDA**: No venv, packages installed to system Python, runs as root
+   - **ROCm**: Pre-configured venv at `/opt/venv` activated by default
+   - **Change**: Modified `setup-environment.sh` to fix ownership of `/opt/venv` (line 24)
+   - **Reason**: AMD's venv is owned by root; we need user write access for package installs
+   - **Files**: `setup-environment.sh`, `devcontainer.json` (python.defaultInterpreterPath)
+
+2. **Python Interpreter Path**
+   - **CUDA**: Uses system Python (`/usr/bin/python`)
+   - **ROCm**: Uses venv Python (`/opt/venv/bin/python`)
+   - **Change**: Set `"python.defaultInterpreterPath": "/opt/venv/bin/python"` in devcontainer.json
+   - **Reason**: PyTorch is only installed in the venv, not system-wide
+   - **Files**: `devcontainer.json` (line 56)
+
+3. **UV Project Environment Configuration**
+   - **CUDA**: Not applicable (no pre-configured venv)
+   - **ROCm**: Must tell uv to use `/opt/venv` instead of creating `.venv/`
+   - **Change**: Added `"UV_PROJECT_ENVIRONMENT": "/opt/venv"` to containerEnv
+   - **Reason**: uv's default behavior creates new `.venv/` which would lack ROCm packages
+   - **Files**: `devcontainer.json` (line 40)
+
+4. **Ubuntu 24.04 User Conflict Resolution**
+   - **CUDA**: NVIDIA containers have no pre-existing user at UID 1000
+   - **ROCm**: Ubuntu 24.04 base has `ubuntu` user at UID 1000
+   - **Change**: Added Dockerfile that deletes `ubuntu` user before common-utils runs
+   - **Reason**: Workaround for devcontainer UID matching bugs on Ubuntu 24.04
+   - **Files**: `Dockerfile`, `devcontainer.json` (build section)
+
+5. **Simplified Permissions Model**
+   - **CUDA**: Group-based sharing (creates user at UID 2112, shared group at GID 1000)
+   - **ROCm**: Direct UID matching (deletes ubuntu user, lets VSCode match to host UID)
+   - **Change**: Removed entire "Permissions Block" from setup-environment.sh
+   - **Reason**: Ubuntu user deletion allows VSCode's UID matching to work correctly
+   - **Files**: `setup-environment.sh` (removed lines), `Dockerfile`
+
+6. **Package Protection with override-dependencies**
+   - **CUDA**: Not needed (NVIDIA packages don't conflict with PyPI)
+   - **ROCm**: Critical to prevent PyPI from overwriting ROCm builds
+   - **Change**: Auto-generate `[tool.uv] override-dependencies` for all 137 ROCm packages
+   - **Reason**: PyPI only has CUDA wheels; installing torch overwrites ROCm version
+   - **Files**: `setup-environment.sh` (lines 60-82), `pyproject.toml` (auto-generated)
+
+7. **ROCm-Provided Packages List Generation**
+   - **CUDA**: Not applicable
+   - **ROCm**: Generate `rocm-provided.txt` from container's constraint file or pip freeze
+   - **Change**: Added package extraction logic to setup-environment.sh (lines 27-32)
+   - **Reason**: Need to know which packages to protect from overwrite
+   - **Files**: `setup-environment.sh`
+
+### Changes for Feature Improvements
+
+These changes add capabilities not present in the original CUDA template:
+
+8. **Modern Package Manager Support (uv)**
+   - **CUDA**: Uses pip only
+   - **ROCm**: Full uv support with `uv init`, `uv add`, `uv sync`
+   - **Change**: Added uv project initialization for standalone projects
+   - **Reason**: Modern workflow with lockfiles, faster installs, better dependency resolution
+   - **Files**: `setup-environment.sh` (lines 53-83)
+
+9. **Standalone Project Detection**
+   - **CUDA**: Always creates requirements.txt
+   - **ROCm**: Detects if new project vs external repo
+   - **Change**: `.standalone-project` marker file created by setup-project.sh
+   - **Reason**: Enable modern uv workflow for new projects while supporting external repos
+   - **Files**: `setup-project.sh`, `setup-environment.sh` (line 55)
+
+10. **Multi-IDE Support**
+    - **CUDA**: VSCode only
+    - **ROCm**: VSCode + JetBrains support
+    - **Change**: Added IDE selection to setup-project.sh
+    - **Reason**: Support developers using PyCharm or other JetBrains IDEs
+    - **Files**: `setup-project.sh`, `devcontainer.json`, `.idea/` directory
+
+11. **Podman Support**
+    - **CUDA**: Docker only
+    - **ROCm**: Docker or Podman
+    - **Change**: Documented Podman compatibility, automatic userns handling
+    - **Reason**: Fedora/RHEL users prefer Podman; VSCode handles it automatically
+    - **Files**: `README.md`, no code changes needed
+
+12. **Enhanced GPU Testing**
+    - **CUDA**: Basic GPU detection test
+    - **ROCm**: Comprehensive test with small + large workload comparison
+    - **Change**: Updated test-gpu.py with dual workload tests and educational output
+    - **Reason**: Show GPU overhead on integrated GPUs and when GPU benefits appear
+    - **Files**: `test-gpu.py`
+
+13. **Changed pip freeze to uv pip freeze**
+    - **CUDA**: Uses `pip freeze`
+    - **ROCm**: Uses `uv pip freeze`
+    - **Change**: Modified package extraction in setup-environment.sh (line 31)
+    - **Reason**: Consistency with uv usage throughout the project
+    - **Files**: `setup-environment.sh`
+
+### Changes for Platform Differences
+
+These changes adapt to ROCm/AMD platform specifics vs CUDA/NVIDIA:
+
+14. **GPU Device Access**
+    - **CUDA**: `--gpus=all`
+    - **ROCm**: `--device=/dev/kfd --device=/dev/dri --group-add=video`
+    - **Change**: Updated runArgs in devcontainer.json
+    - **Reason**: ROCm uses different device nodes than NVIDIA
+    - **Files**: `devcontainer.json` (lines 17-28)
+
+15. **GPU Environment Variables**
+    - **CUDA**: `CUDA_VISIBLE_DEVICES`
+    - **ROCm**: `HIP_VISIBLE_DEVICES`
+    - **Change**: Replaced CUDA vars with HIP vars in containerEnv
+    - **Reason**: ROCm uses HIP runtime instead of CUDA
+    - **Files**: `devcontainer.json` (line 32)
+
+16. **Architecture Override**
+    - **CUDA**: Not needed (CUDA automatically detects compute capability)
+    - **ROCm**: `HSA_OVERRIDE_GFX_VERSION=11.0.0` for Strix Halo
+    - **Change**: Added HSA_OVERRIDE_GFX_VERSION to containerEnv
+    - **Reason**: gfx1151 (Strix Halo) needs override for some operations
+    - **Files**: `devcontainer.json` (line 33)
+
+17. **GPU Monitoring Tool**
+    - **CUDA**: `nvidia-smi`
+    - **ROCm**: `rocm-smi`
+    - **Change**: All references changed from nvidia-smi to rocm-smi
+    - **Reason**: Different GPU management tools
+    - **Files**: `README.md`, `setup-environment.sh`, documentation
+
+18. **Base Container Image**
+    - **CUDA**: `nvcr.io/nvidia/pytorch:XX.XX-py3`
+    - **ROCm**: `rocm/pytorch:rocm7.1_ubuntu24.04_py3.13_pytorch_release_2.9.1`
+    - **Change**: Updated Dockerfile base image
+    - **Reason**: Different vendors, different registries
+    - **Files**: `Dockerfile`
+
+19. **Package Names and Paths**
+    - **CUDA**: `nvidia-provided.txt`
+    - **ROCm**: `rocm-provided.txt`
+    - **Change**: Renamed file and all references
+    - **Reason**: Clarity and consistency with platform
+    - **Files**: `scripts/resolve-dependencies.py`, `setup-environment.sh`
+
+### Documentation Changes
+
+20. **Hardware Documentation**
+    - **CUDA**: NVIDIA GPU focus
+    - **ROCm**: Consumer AMD GPU focus (Ryzen AI, Radeon RX)
+    - **Change**: Updated all hardware references and prerequisites
+    - **Reason**: Different target hardware
+    - **Files**: `README.md`
+
+21. **Installation Instructions**
+    - **CUDA**: CUDA driver installation
+    - **ROCm**: ROCm driver installation with Radeon/Ryzen guide
+    - **Change**: Updated prerequisites section
+    - **Reason**: Different driver installation process
+    - **Files**: `README.md`
+
+22. **Performance Expectations**
+    - **CUDA**: GPU always faster (discrete GPU with VRAM)
+    - **ROCm**: GPU overhead explained (integrated GPU with shared memory)
+    - **Change**: Added section explaining when GPU helps on integrated GPUs
+    - **Reason**: Set realistic expectations for consumer AMD hardware
+    - **Files**: `README.md`, `test-gpu.py` output
+
+23. **Blog Post Documentation**
+    - **CUDA**: Not applicable
+    - **ROCm**: Extensive notes-for-blog-post.md documenting journey
+    - **Change**: Created comprehensive documentation of porting process
+    - **Reason**: Share lessons learned, help others port to ROCm
+    - **Files**: `notes-for-blog-post.md`
+
+### Bug Fixes and Workarounds
+
+24. **apt-get Update Error Handling**
+    - **CUDA**: Not needed
+    - **ROCm**: Added `|| true` to apt-get update
+    - **Change**: Modified setup-environment.sh (line 41)
+    - **Reason**: AMD container includes unreachable internal repos (expected)
+    - **Files**: `setup-environment.sh`
+
+25. **apt-get --no-upgrade Flag**
+    - **CUDA**: Uses standard apt-get install
+    - **ROCm**: Uses `apt-get install -y --no-upgrade`
+    - **Change**: Added --no-upgrade to apt-get commands
+    - **Reason**: Prevent accidentally upgrading ROCm packages
+    - **Files**: `setup-environment.sh` (line 43)
+
+## Quick Reference: CUDA to ROCm Equivalents
 
 | Feature | CUDA Template | ROCm Template |
 |---------|--------------|---------------|
@@ -486,9 +712,13 @@ docker logs <container-id>
 | GPU Tool | `nvidia-smi` | `rocm-smi` |
 | GPU Env Var | `CUDA_VISIBLE_DEVICES` | `HIP_VISIBLE_DEVICES` |
 | Package List | `nvidia-provided.txt` | `rocm-provided.txt` |
+| Python Location | System `/usr/bin/python` | Venv `/opt/venv/bin/python` |
+| Package Install | Direct to system | Inside `/opt/venv` |
+| Permissions | Group-based (UID 2112 + shared GID) | Direct UID matching (delete ubuntu user) |
 | IDE Support | VSCode only | VSCode + JetBrains |
 | Runtime | Docker only | Docker or Podman |
-| Permissions | Group-based sharing (UID 2112 + shared GID) | Direct UID matching (deletes ubuntu user, VSCode auto-adjusts UID) |
+| Package Manager | pip only | pip + uv with project mode |
+| Dependency Protection | Not needed | override-dependencies for 137 packages |
 
 ## Resources
 

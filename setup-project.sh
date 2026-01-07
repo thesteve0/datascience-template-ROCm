@@ -155,6 +155,10 @@ else
 
     # Create Python structure
     touch src/__init__.py src/${PROJECT_NAME}/__init__.py tests/__init__.py
+
+    # Create marker file to indicate standalone project
+    # This will be used by setup-environment.sh to initialize uv project in the container
+    touch .standalone-project
 fi
 
 # ==============================================================================
@@ -186,14 +190,20 @@ fi
 echo ""
 if [ -n "$CLONE_REPO" ]; then
     echo "Dependency Management (External Repo):"
-    echo "  1. Create requirements.txt with project dependencies"
-    echo "  2. In container: python scripts/resolve-dependencies.py requirements.txt"
-    echo "  3. In container: uv pip install -r requirements-filtered.txt"
+    echo "  Your cloned repo may have requirements.txt or pyproject.toml."
+    echo "  If using requirements.txt:"
+    echo "    1. In container: python scripts/resolve-dependencies.py requirements.txt"
+    echo "    2. In container: uv pip install -r requirements-filtered.txt"
+    echo "  If using pyproject.toml:"
+    echo "    - In container: uv sync"
 else
-    echo "Dependency Management:"
-    echo "  1. Create requirements.txt with your ML dependencies"
-    echo "  2. In container: python scripts/resolve-dependencies.py requirements.txt"
-    echo "  3. In container: uv pip install -r requirements-filtered.txt"
+    echo "Dependency Management (uv Project):"
+    echo "  This project uses uv for modern Python dependency management."
+    echo "  Add dependencies:"
+    echo "    - uv add <package>              # Add a dependency"
+    echo "    - uv add --dev <package>        # Add a dev dependency"
+    echo "    - uv sync                       # Install all dependencies"
+    echo "  Note: ROCm-provided packages (PyTorch, etc.) are already available."
 fi
 
 echo ""

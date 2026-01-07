@@ -1,0 +1,102 @@
+# ROCm GPU Memory Access Fault - Firmware Issue
+
+## Issue Summary
+- **Problem**: "Memory access fault by GPU node-1... Page not present or supervisor privilege"
+- **GPU**: AMD Radeon 8060S (Strix Halo, gfx1151)
+- **Root Cause**: linux-firmware-amdgpu 20251125 update breaks ROCm on AI Max 395
+- **Status**: Known bug, was working before firmware update
+
+## Evidence
+- Minimal Docker test reproduces issue (not devcontainer config problem):
+  ```bash
+  docker run --rm -it --device=/dev/kfd --device=/dev/dri --group-add=video \
+    rocm/pytorch:rocm7.1_ubuntu24.04_py3.13_pytorch_release_2.9.1 \
+    python3 -c "import torch; t = torch.tensor([1.0]).cuda(); print(t)"
+  # Result: Memory access fault
+  ```
+
+- Current firmware version: linux-firmware-20251125-1.fc43.noarch
+- Kernel: 6.17.8-300.fc43.x86_64
+- Host ROCm: 6.4.2
+- System: Aurora (immutable Fedora)
+
+## Frame.work Community Thread
+https://community.frame.work/t/fyi-linux-firmware-amdgpu-20251125-breaks-rocm-on-ai-max-395-8060s/78554
+
+Multiple users confirm same issue on Strix Halo after 20251125 firmware update.
+
+## Fix: Downgrade Firmware (Aurora/Silverblue)
+
+```bash
+# On HOST - Downgrade to working version (20251111)
+rpm-ostree override replace \
+  https://kojipkgs.fedoraproject.org/packages/linux-firmware/20251111/1.fc43/noarch/linux-firmware-20251111-1.fc43.noarch.rpm \
+  https://kojipkgs.fedoraproject.org/packages/linux-firmware/20251111/1.fc43/noarch/linux-firmware-amd-gpu-20251111-1.fc43.noarch.rpm \
+  https://kojipkgs.fedoraproject.org/packages/linux-firmware/20251111/1.fc43/noarch/linux-firmware-intel-20251111-1.fc43.noarch.rpm \
+  https://kojipkgs.fedoraproject.org/packages/linux-firmware/20251111/1.fc43/noarch/linux-firmware-whence-20251111-1.fc43.noarch.rpm
+
+# Enable initramfs
+rpm-ostree initramfs --enable
+
+# Reboot
+systemctl reboot
+```
+
+**After reboot, test:**
+```bash
+docker run --rm -it --device=/dev/kfd --device=/dev/dri --group-add=video \
+  rocm/pytorch:rocm7.1_ubuntu24.04_py3.13_pytorch_release_2.9.1 \
+  python3 -c "import torch; t = torch.tensor([1.0]).cuda(); print(t)"
+```
+
+## To Undo Downgrade (when fixed firmware arrives):
+```bash
+rpm-ostree initramfs --disable
+rpm-ostree override reset linux-firmware linux-firmware-amd-gpu linux-firmware-intel linux-firmware-whence
+systemctl reboot
+```
+
+## Questions for Aurora Discord
+
+1. **Is there a safer way to downgrade firmware on Aurora?**
+   - Concerned about rpm-ostree override breaking system updates
+   - Should we wait for official fix instead?
+
+2. **How to prevent auto-updating this package?**
+   - Can we pin linux-firmware at 20251111 until fix arrives?
+   - Will override persist across system updates?
+
+3. **Alternative workarounds?**
+   - Any kernel boot parameters that help?
+   - Other Aurora users with Strix Halo experiencing this?
+
+## Template Changes Made (may need reverting)
+
+During debugging, made these changes to devcontainer.json:
+1. Added `--group-add=105` (render group) - technically correct per AMD docs
+2. Removed `HSA_OVERRIDE_GFX_VERSION: "11.0.0"` - correct for gfx1151
+
+**Decision needed**: Keep these changes (they're AMD-recommended) or revert?
+
+## Current Status
+- Devcontainer template is CORRECT - not the issue
+- Host firmware is broken
+- Waiting on either:
+  - Firmware downgrade (risky on Aurora?)
+  - Official firmware fix from AMD/Fedora
+  - Aurora community guidance
+
+After reboot, verify with:
+  rpm -q amd-gpu-firmware
+  # Should show: amd-gpu-firmware-20251111-1.fc43.noarch
+
+  Then test the GPU:
+  docker run --rm -it --device=/dev/kfd --device=/dev/dri --group-add=video \
+    rocm/pytorch:rocm7.1_ubuntu24.04_py3.13_pytorch_release_2.9.1 \
+    python3 -c "import torch; t = torch.tensor([1.0]).cuda(); print(t)"
+
+
+## Reference Links
+- Frame.work thread: https://community.frame.work/t/fyi-linux-firmware-amdgpu-20251125-breaks-rocm-on-ai-max-395-8060s/78554
+- ROCm Issue #5824: https://github.com/ROCm/ROCm/issues/5824
+- AMD ROCm render group requirement: https://rocm.docs.amd.com/projects/install-on-linux/en/latest/install/prerequisites.html

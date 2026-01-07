@@ -18,6 +18,7 @@
     "--device=/dev/kfd",
     "--device=/dev/dri",
     "--group-add=video",
+    "--group-add=105",
     "--ipc=host",
     "--cap-add=SYS_PTRACE",
     "--security-opt=seccomp=unconfined",
@@ -30,13 +31,13 @@
 
   "containerEnv": {
     "HIP_VISIBLE_DEVICES": "0",
-    "HSA_OVERRIDE_GFX_VERSION": "11.0.0",
     "ROCM_HOME": "/opt/rocm",
     "PYTHONPATH": "/workspaces/{{PROJECT_NAME}}/src",
     "HF_HOME": "/workspaces/{{PROJECT_NAME}}/.cache/huggingface",
     "TORCH_HOME": "/workspaces/{{PROJECT_NAME}}/.cache/torch",
     "TRANSFORMERS_CACHE": "/workspaces/{{PROJECT_NAME}}/.cache/huggingface/transformers",
-    "SSH_AUTH_SOCK": "/tmp/ssh-agent.sock"
+    "SSH_AUTH_SOCK": "/tmp/ssh-agent.sock",
+    "VIRTUAL_ENV": "${containerWorkspaceFolder}/.venv"
   },
 
   "mounts": [
@@ -52,8 +53,8 @@
   "customizations": {
     "vscode": {
       "settings": {
-        "python.defaultInterpreterPath": "/opt/venv/bin/python",
-        "python.terminal.activateEnvironment": false,
+        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python",
+        "python.terminal.activateEnvironment": true,
         "files.watcherExclude": {
           "**/.cache/**": true,
           "**/models/**": true,

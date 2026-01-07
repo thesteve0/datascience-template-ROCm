@@ -1,4 +1,4 @@
-Her# CLAUDE.md
+# CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -217,3 +217,7 @@ Repository is in initial setup phase with base image decision made. Next steps a
 ### Community Resources
 - AMD Developer Discord (for consumer GPU support questions)
 - [ROCm GitHub Issues](https://github.com/ROCm/ROCm/issues) - For reporting bugs and tracking gfx1151-specific issues
+
+## Claude Code Working Notes
+
+**Testing Limitations**: Claude Code cannot run or test this project directly since it requires execution inside a devcontainer with GPU access. Only host-level commands (file operations, git, etc.) can be executed. For GPU tests, Docker commands, or devcontainer operations, provide the commands for the user to run manually.
