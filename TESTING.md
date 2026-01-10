@@ -50,7 +50,7 @@ All Phase 1 core template files have been successfully ported from the CUDA temp
 
 **ROCm Adaptations:**
 - Creates `rocm-provided.txt` instead of `nvidia-provided.txt`
-- Added ROCm verification with `rocm-smi`
+- Added ROCm verification with `amd-smi` (preferred) or `rocm-smi`
 - Updated messaging for ROCm environment
 
 ### 4. resolve-dependencies.py (6.8KB)

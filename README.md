@@ -9,9 +9,11 @@ A DevContainer template for PyTorch machine learning development on AMD GPUs usi
 - **AMD ROCm GPU Support** - Full GPU acceleration for PyTorch on consumer AMD hardware
 - **Intelligent Dependency Management** - Automatically resolves conflicts with ROCm-provided packages
 - **Multi-IDE Support** - VSCode and JetBrains configurations
-- **Persistent Storage** - Named volumes for models, datasets, and caches survive container rebuilds
+- **Persistent Storage** - Data directories survive container rebuilds (stored in project folder)
 - **External Project Integration** - Clone and work with existing repositories seamlessly
 - **Docker & Podman** - Works with both container runtimes
+- **Claude Code Integration** - Built-in Claude Code CLI with Vertex AI authentication
+- **External Data Access** - Host ~/data directory accessible at /data in container
 
 ## ⚠️ Security Notice: Development Only
 
@@ -59,8 +61,8 @@ For Ryzen AI Max+ 395 (Strix Halo) or similar consumer hardware:
 # Check AMD GPU is visible
 lspci | grep -i amd
 
-# Verify ROCm installation
-rocm-smi
+# Verify ROCm installation (amd-smi is preferred, rocm-smi still works)
+amd-smi
 
 # Test PyTorch ROCm (after installing container runtime)
 docker run -it --device=/dev/kfd --device=/dev/dri \
@@ -118,7 +120,7 @@ code .
 #    (First build takes 5-10 minutes)
 
 # 5. Inside container, verify GPU access
-rocm-smi
+amd-smi
 python test-gpu.py  # Comprehensive GPU test with performance benchmarks
 
 # 6. Install your dependencies
@@ -347,8 +349,8 @@ The test validates your ROCm setup is working correctly and shows GPU benefits a
 
 **Quick verification:**
 ```bash
-# Check GPU is visible
-rocm-smi
+# Check GPU is visible (amd-smi preferred, rocm-smi still works)
+amd-smi
 
 # Quick PyTorch GPU test
 python -c "import torch; print(f'GPU: {torch.cuda.is_available()}')"
@@ -368,33 +370,86 @@ You can configure for VSCode, JetBrains, or both:
 ./setup-project.sh --ide both
 ```
 
-### Persistent Volumes
+### Data Directories
 
-The template uses Docker/Podman named volumes for data that should survive container rebuilds:
+The template creates these directories in your project folder:
 
-- `<project>-models` → `./models/` - Trained models and checkpoints
-- `<project>-datasets` → `./datasets/` - Training and evaluation data
-- `<project>-cache-hf` → `.cache/huggingface/` - HuggingFace models cache
-- `<project>-cache-torch` → `.cache/torch/` - PyTorch models cache
+- `./models/` - Trained models and checkpoints
+- `./datasets/` - Training and evaluation data
+- `./.cache/` - HuggingFace and PyTorch caches
 
-To view volumes:
+**How it works:**
+- These are regular directories in your project folder
+- VSCode bind-mounts the entire workspace, so files are visible from both host and container
+- Deleting the container does NOT delete these directories (they're on your host filesystem)
+- Add to `.gitignore` to avoid committing large files (already configured by default)
+
+**Permissions:** Both your host user and the container user share the same UID (VSCode's `updateRemoteUserUID` feature), so read/write access works seamlessly from either environment.
+
+### External Data Access
+
+The devcontainer automatically mounts your host's `~/data` directory at `/data` inside the container, allowing you to access datasets and files stored outside the project without copying them.
+
+**Use cases:**
 ```bash
-docker volume ls | grep my-ml-project
+# Inside container
+ls /data                              # Browse host ~/data
+cp /data/large-dataset.tar.gz ./datasets/  # Copy into project
+python train.py --data-path /data/training-set  # Reference directly
 ```
+
+**Benefits:**
+- No data duplication for large datasets
+- Share data across multiple ML projects
+- Keep proprietary data outside version control
+- Access centrally-stored pre-trained models
+
+**Note:** The mount is read-write, so changes made to `/data` inside the container will be reflected on the host.
+
+### Claude Code Integration
+
+The devcontainer includes Claude Code CLI with Google Cloud Vertex AI authentication.
+
+**Setup (required for Claude Code):**
+
+1. Set environment variables on your host:
+```bash
+# Add to ~/.bashrc or ~/.zshrc
+export ANTHROPIC_VERTEX_PROJECT_ID="your-gcp-project-id"
+export ANTHROPIC_VERTEX_REGION="us-east5"
+export CLAUDE_CODE_USE_VERTEX="true"
+```
+
+2. Ensure Google Cloud credentials are configured:
+```bash
+# On host machine
+gcloud auth application-default login
+```
+
+**Usage inside container:**
+```bash
+# Claude Code is available inside the devcontainer
+claude --help
+
+# Your gcloud credentials are automatically mounted (read-only)
+# Environment variables are passed from host to container
+```
+
+**Technical details:**
+- Feature: `ghcr.io/anthropics/devcontainer-features/claude-code:1`
+- Credentials mount: `~/.config/gcloud` → `/home/stpousty-devcontainer/.config/gcloud` (read-only)
+- Environment variables: `ANTHROPIC_VERTEX_PROJECT_ID`, `ANTHROPIC_VERTEX_REGION`, `CLAUDE_CODE_USE_VERTEX`
 
 ### Cleanup
 
-Stop container but keep volumes:
+Stop container:
 ```bash
 ./cleanup-script.sh
 ```
 
-Full cleanup (deletes all data):
+To delete data:
 ```bash
-docker volume rm my-ml-project-models \
-                 my-ml-project-datasets \
-                 my-ml-project-cache-hf \
-                 my-ml-project-cache-torch
+rm -rf models/* datasets/* .cache/*
 ```
 
 ## ROCm-Specific Configuration
@@ -442,12 +497,12 @@ Verified working on:
 ### GPU Not Detected
 
 ```bash
-# Check GPU is visible to system
-rocm-smi
+# Check GPU is visible to system (amd-smi preferred, rocm-smi still works)
+amd-smi
 
 # Check GPU is visible to container
 docker run -it --device=/dev/kfd --device=/dev/dri \
-    rocm/pytorch:latest rocm-smi
+    rocm/pytorch:latest amd-smi
 
 # Verify PyTorch can see GPU
 python -c "import torch; print(torch.cuda.is_available())"
@@ -638,9 +693,9 @@ These changes adapt to ROCm/AMD platform specifics vs CUDA/NVIDIA:
 
 17. **GPU Monitoring Tool**
     - **CUDA**: `nvidia-smi`
-    - **ROCm**: `rocm-smi`
-    - **Change**: All references changed from nvidia-smi to rocm-smi
-    - **Reason**: Different GPU management tools
+    - **ROCm**: `amd-smi` (preferred) or `rocm-smi` (legacy, still works)
+    - **Change**: All references changed from nvidia-smi to amd-smi
+    - **Reason**: Different GPU management tools; amd-smi provides more detailed output
     - **Files**: `README.md`, `setup-environment.sh`, documentation
 
 18. **Base Container Image**
@@ -709,7 +764,7 @@ These changes adapt to ROCm/AMD platform specifics vs CUDA/NVIDIA:
 |---------|--------------|---------------|
 | Base Container | `nvcr.io/nvidia/pytorch` | `rocm/pytorch` |
 | GPU Access | `--gpus=all` | `--device=/dev/kfd --device=/dev/dri` |
-| GPU Tool | `nvidia-smi` | `rocm-smi` |
+| GPU Tool | `nvidia-smi` | `amd-smi` (or `rocm-smi`) |
 | GPU Env Var | `CUDA_VISIBLE_DEVICES` | `HIP_VISIBLE_DEVICES` |
 | Package List | `nvidia-provided.txt` | `rocm-provided.txt` |
 | Python Location | System `/usr/bin/python` | Venv `/opt/venv/bin/python` |

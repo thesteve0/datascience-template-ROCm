@@ -133,11 +133,14 @@ git config --global init.defaultBranch main
 # Verify ROCm installation
 echo ""
 echo "Verifying ROCm installation..."
-if command -v rocm-smi &> /dev/null; then
-    echo "ROCm SMI found. GPU status:"
+if command -v amd-smi &> /dev/null; then
+    echo "AMD SMI found. GPU status:"
+    amd-smi || echo "Warning: amd-smi failed (this is normal if no GPU is available)"
+elif command -v rocm-smi &> /dev/null; then
+    echo "ROCm SMI found (note: amd-smi is preferred). GPU status:"
     rocm-smi || echo "Warning: rocm-smi failed (this is normal if no GPU is available)"
 else
-    echo "Warning: rocm-smi not found in PATH"
+    echo "Warning: Neither amd-smi nor rocm-smi found in PATH"
 fi
 
 echo ""

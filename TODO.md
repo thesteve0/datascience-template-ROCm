@@ -56,7 +56,7 @@ This file tracks the roadmap for porting the CUDA data science template to ROCm 
   - [x] Configure port forwarding (TensorBoard, Jupyter, etc.)
 - [ ] Test VSCode devcontainer functionality
   - [ ] Container builds successfully
-  - [ ] GPU access works (`rocm-smi` visible)
+  - [ ] GPU access works (`amd-smi` visible)
   - [ ] PyTorch can access GPU
   - [ ] Volumes persist across rebuilds
 

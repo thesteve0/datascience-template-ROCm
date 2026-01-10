@@ -161,7 +161,7 @@ ROCm 7.1 for consumer GPUs is marked as "preview" - this means:
 ## Technical Details Worth Noting
 
 ### ROCm vs CUDA Differences
-- **GPU tool**: `rocm-smi` instead of `nvidia-smi`
+- **GPU tool**: `amd-smi` (preferred) or `rocm-smi` instead of `nvidia-smi`
 - **Environment variables**: `HIP_VISIBLE_DEVICES` instead of `CUDA_VISIBLE_DEVICES`
 - **Architecture**: gfx1151 (Strix Halo) vs CUDA compute capability
 - **Memory**: Shared system memory (up to 128GB on Ryzen APUs) vs dedicated VRAM

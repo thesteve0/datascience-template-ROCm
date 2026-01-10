@@ -11,7 +11,8 @@
       "uid": "{{DEV_UID}}",
       "gid": "{{DEV_UID}}",
       "upgradePackages": false
-    }
+    },
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
   },
 
   "runArgs": [
@@ -26,7 +27,9 @@
     "--cpus=8",
     "--ulimit=memlock=-1",
     "--ulimit=stack=67108864",
-    "--mount", "type=bind,source=${env:SSH_AUTH_SOCK},target=/tmp/ssh-agent.sock"
+    "--mount", "type=bind,source=${env:SSH_AUTH_SOCK},target=/tmp/ssh-agent.sock",
+    "--mount", "type=bind,source=${localEnv:HOME}/.config/gcloud,target=/home/stpousty-devcontainer/.config/gcloud,readonly",
+    "--mount", "type=bind,source=${localEnv:HOME}/data,target=/data"
   ],
 
   "containerEnv": {
@@ -37,15 +40,14 @@
     "TORCH_HOME": "/workspaces/{{PROJECT_NAME}}/.cache/torch",
     "TRANSFORMERS_CACHE": "/workspaces/{{PROJECT_NAME}}/.cache/huggingface/transformers",
     "SSH_AUTH_SOCK": "/tmp/ssh-agent.sock",
-    "VIRTUAL_ENV": "${containerWorkspaceFolder}/.venv"
+    "VIRTUAL_ENV": "${containerWorkspaceFolder}/.venv",
+    "ANTHROPIC_VERTEX_PROJECT_ID": "${localEnv:ANTHROPIC_VERTEX_PROJECT_ID}",
+    "ANTHROPIC_VERTEX_REGION": "${localEnv:ANTHROPIC_VERTEX_REGION}",
+    "CLAUDE_CODE_USE_VERTEX": "${localEnv:CLAUDE_CODE_USE_VERTEX}"
   },
 
-  "mounts": [
-    "source={{PROJECT_NAME}}-models,target=/workspaces/{{PROJECT_NAME}}/models,type=volume",
-    "source={{PROJECT_NAME}}-datasets,target=/workspaces/{{PROJECT_NAME}}/datasets,type=volume",
-    "source={{PROJECT_NAME}}-cache-hf,target=/workspaces/{{PROJECT_NAME}}/.cache/huggingface,type=volume",
-    "source={{PROJECT_NAME}}-cache-torch,target=/workspaces/{{PROJECT_NAME}}/.cache/torch,type=volume"
-  ],
+  // No volume mounts needed - VSCode bind-mounts the entire workspace folder by default.
+  // models/, datasets/, .cache/ are regular project directories visible from both host and container.
 
   "workspaceFolder": "/workspaces/{{PROJECT_NAME}}",
   "remoteUser": "{{DEV_USER}}",

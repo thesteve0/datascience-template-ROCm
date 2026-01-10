@@ -24,6 +24,8 @@ The template follows a fork-friendly devcontainer design with these core compone
 - **GPU Access**: Direct AMD GPU access inside containers
 - **Persistent Volumes**: Separate named volumes for models, datasets, and caches to survive container rebuilds
 - **Dependency Resolution**: Smart filtering of requirements to avoid conflicts with ROCm-provided packages
+- **Claude Code Integration**: Built-in support for Claude Code CLI via devcontainer feature
+- **External Data Access**: Host ~/data directory mounted at /data in container for accessing datasets outside project
 
 ### Repository Structure
 
@@ -95,7 +97,7 @@ This preserves ROCm optimizations while allowing additional package installation
 ### Key Differences from CUDA
 
 - **Base Images**: Use AMD ROCm containers (e.g., `rocm/pytorch`) instead of NVIDIA
-- **GPU Detection**: Use `rocm-smi` instead of `nvidia-smi`
+- **GPU Detection**: Use `amd-smi` (preferred) or `rocm-smi` instead of `nvidia-smi`
 - **Driver Requirements**: ROCm drivers and ROCm runtime instead of NVIDIA drivers and CUDA toolkit
 - **Environment Variables**: ROCm-specific variables (e.g., `HIP_VISIBLE_DEVICES` instead of `CUDA_VISIBLE_DEVICES`)
 - **PyTorch Differences**: ROCm PyTorch builds may have different package names and dependencies
@@ -151,13 +153,13 @@ Both IDE configurations use the same:
 1. Add packages to `requirements.txt` or `pyproject.toml`
 2. Run `resolve-dependencies.py` to filter conflicts
 3. Install using `uv pip install` with filtered file
-4. Verify GPU access still works with `rocm-smi` or PyTorch GPU check
+4. Verify GPU access still works with `amd-smi` (or `rocm-smi`) or PyTorch GPU check
 
 ### Verifying GPU Access
 
 ```bash
-# Check GPU visibility
-rocm-smi
+# Check GPU visibility (amd-smi is preferred, rocm-smi still works)
+amd-smi
 
 # Test PyTorch GPU access
 python -c "import torch; print(f'GPU available: {torch.cuda.is_available()}'); print(f'GPU count: {torch.cuda.device_count()}')"
@@ -218,6 +220,48 @@ Repository is in initial setup phase with base image decision made. Next steps a
 - AMD Developer Discord (for consumer GPU support questions)
 - [ROCm GitHub Issues](https://github.com/ROCm/ROCm/issues) - For reporting bugs and tracking gfx1151-specific issues
 
+## Claude Code Integration
+
+### Claude Code Feature
+
+The devcontainer includes the Claude Code feature (`ghcr.io/anthropics/devcontainer-features/claude-code:1`), which provides:
+
+- Claude Code CLI available inside the devcontainer
+- Google Cloud credentials mounted from host for Vertex AI authentication
+- Environment variables passed from host to container
+
+### Required Configuration
+
+**Host Environment Variables** (set on your host machine):
+```bash
+export ANTHROPIC_VERTEX_PROJECT_ID="your-gcp-project-id"
+export ANTHROPIC_VERTEX_REGION="us-east5"  # or your preferred region
+export CLAUDE_CODE_USE_VERTEX="true"
+```
+
+**Mounted Credentials:**
+- Host `~/.config/gcloud` → Container `/home/stpousty-devcontainer/.config/gcloud` (read-only)
+
+### External Data Mount
+
+The devcontainer mounts your host's `~/data` directory at `/data` in the container. This allows access to datasets and files outside the project directory without copying them into the workspace.
+
+**Usage:**
+```bash
+# Inside container
+ls /data                    # Access host ~/data directory
+cp /data/dataset.csv ./datasets/  # Copy data into project
+ln -s /data/models ./models/external  # Link to external models
+```
+
+**Use Cases:**
+- Access large datasets stored on host without duplication
+- Share data between multiple projects
+- Keep proprietary data outside version control
+- Reference pre-trained models stored centrally
+
 ## Claude Code Working Notes
 
 **Testing Limitations**: Claude Code cannot run or test this project directly since it requires execution inside a devcontainer with GPU access. Only host-level commands (file operations, git, etc.) can be executed. For GPU tests, Docker commands, or devcontainer operations, provide the commands for the user to run manually.
+
+**Claude Code Availability**: When working inside the devcontainer, Claude Code is available via the CLI. The integration includes authentication via Google Cloud Vertex AI and can be used for AI-assisted development within the container environment.

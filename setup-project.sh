@@ -120,6 +120,10 @@ if [ -f "resolve-dependencies.py" ]; then
     mv resolve-dependencies.py scripts/
 fi
 
+# Create data directories in project folder
+# These are regular directories visible from both host and container
+mkdir -p models datasets .cache
+
 # Handle repository modes
 if [ -n "$CLONE_REPO" ]; then
     # External repo mode
@@ -151,7 +155,7 @@ else
     echo "Standalone mode: creating project structure"
 
     # Create additional directories for standalone
-    mkdir -p src/${PROJECT_NAME} {configs,tests,datasets,models,.cache}
+    mkdir -p src/${PROJECT_NAME} configs tests
 
     # Create Python structure
     touch src/__init__.py src/${PROJECT_NAME}/__init__.py tests/__init__.py
@@ -208,6 +212,7 @@ fi
 
 echo ""
 echo "Verify GPU Access:"
-echo "  - rocm-smi"
+echo "  - amd-smi  (preferred, more detailed output)"
+echo "  - rocm-smi (legacy, still works)"
 echo "  - python -c 'import torch; print(torch.cuda.is_available())'"
 echo ""

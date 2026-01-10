@@ -30,7 +30,7 @@ def test_gpu_availability():
     if not gpu_available:
         print("\n❌ ERROR: No GPU detected!")
         print("\nTroubleshooting steps:")
-        print("1. Check ROCm installation: rocm-smi")
+        print("1. Check ROCm installation: amd-smi (or rocm-smi)")
         print("2. Verify container has GPU access: ls -la /dev/kfd /dev/dri")
         print("3. Check environment variables:")
         print("   - HIP_VISIBLE_DEVICES")
