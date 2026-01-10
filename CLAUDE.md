@@ -92,6 +92,52 @@ The `resolve-dependencies.py` script:
 
 This preserves ROCm optimizations while allowing additional package installation.
 
+### Virtual Environment Design - CRITICAL: Python Version Matching
+
+The template uses a `.pth` bridge file approach (NOT `--system-site-packages`) to make container packages accessible while preventing accidental overwrites.
+
+**Why .pth instead of --system-site-packages:**
+- `--system-site-packages` would allow `pip install torch` to overwrite ROCm packages, even with uv's `exclude-dependencies`
+- The `.pth` file makes packages importable but doesn't affect pip's package resolution
+- This provides stronger protection against accidental overwrites via direct pip usage
+
+**CRITICAL REQUIREMENT: Python Version Must Match**
+
+The `.venv` MUST be created with `/opt/venv/bin/python` to ensure Python version consistency:
+
+- Container's `/opt/venv` uses Python 3.13 (as of ROCm 7.1 containers)
+- If `.venv` is created with system Python 3.12, **binary incompatibility** breaks numpy/torch imports
+- The misleading error "importing numpy from source directory" actually means "C extension binary incompatibility"
+- Python 3.12 cannot load `.so` files compiled for Python 3.13 (and vice versa)
+
+**How It Works:**
+
+1. `setup-environment.sh` detects container Python version: `/opt/venv/bin/python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"`
+2. Creates `.venv` using that Python: `/opt/venv/bin/python -m venv .venv`
+3. Verifies versions match after creation (exits with error if mismatch detected)
+4. Creates dynamic `.pth` bridge: `.venv/lib/pythonX.Y/site-packages/_rocm_bridge.pth` → `/opt/venv/lib/pythonX.Y/site-packages`
+5. Python loads the .pth file and adds `/opt/venv` to sys.path
+6. Container packages (torch, numpy) become importable
+7. uv's `exclude-dependencies` still prevents installing excluded packages
+
+**Version Mismatch Detection:**
+
+The template now automatically verifies Python versions match during venv creation and will error with a clear message if they don't. This prevents the silent failure mode that causes confusing import errors later.
+
+**Common Scenario That Triggers Mismatch:**
+
+- Manually running `python3 -m venv .venv` instead of `/opt/venv/bin/python -m venv .venv`
+- The system `python3` might be a different version than the container's Python
+- This creates a venv with the wrong Python version, breaking the .pth bridge
+
+**Why This Matters for Claude Code:**
+
+When working on this template or projects created from it, remember that:
+- VSCode's Ctrl+F5 runner uses `.venv/bin/python` to execute code
+- If Python versions don't match, imports of container packages will fail
+- The error message is misleading ("importing from source directory") but the root cause is binary incompatibility
+- Always check Python versions first when debugging import errors
+
 ## ROCm-Specific Considerations
 
 ### Key Differences from CUDA

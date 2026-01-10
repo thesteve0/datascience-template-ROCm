@@ -77,6 +77,16 @@ This file tracks the roadmap for porting the CUDA data science template to ROCm 
 ## Phase 3: Improvements Over CUDA Template
 
 ### Enhanced Dependency Management
+- [x] **Python Version Mismatch Detection** ✅ COMPLETED (2026-01-09)
+  - [x] Added automatic Python version verification in setup-environment.sh
+  - [x] Prevents binary incompatibility between .venv and /opt/venv packages
+  - [x] Dynamically detects container Python version instead of hardcoding
+  - [x] Clear error messages when version mismatch detected
+  - [x] Added troubleshooting documentation to README.md
+  - [x] Documented .pth bridge design rationale in CLAUDE.md
+  - **Issue**: Projects created with wrong Python version caused "importing numpy from source directory" errors
+  - **Root Cause**: Binary incompatibility when Python 3.12 .venv tries to load Python 3.13 C extensions
+  - **Solution**: Automatic version detection and verification prevents silent failures
 - [ ] Improve conflict detection algorithm
 - [ ] Add support for poetry/pdm/pixi in addition to requirements.txt
 - [ ] Better error messages when conflicts detected

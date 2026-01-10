@@ -56,19 +56,38 @@ if [ -f "${WORKSPACE_DIR}/.standalone-project" ]; then
     echo "Initializing uv project for standalone mode..."
     cd ${WORKSPACE_DIR}
 
+    # Detect /opt/venv Python version for consistency
+    CONTAINER_PYTHON_VERSION=$(/opt/venv/bin/python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+    echo "Container Python version: $CONTAINER_PYTHON_VERSION"
+
     # Create venv from /opt/venv's Python for version consistency
     if [ ! -d ".venv" ]; then
-        echo "Creating project virtual environment..."
+        echo "Creating project virtual environment with Python $CONTAINER_PYTHON_VERSION..."
         /opt/venv/bin/python -m venv .venv
+
+        # CRITICAL: Verify the venv uses the same Python version
+        VENV_PYTHON_VERSION=$(.venv/bin/python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+
+        if [ "$VENV_PYTHON_VERSION" != "$CONTAINER_PYTHON_VERSION" ]; then
+            echo "ERROR: venv Python version mismatch!"
+            echo "  Container /opt/venv: Python $CONTAINER_PYTHON_VERSION"
+            echo "  Created .venv: Python $VENV_PYTHON_VERSION"
+            echo "  This will cause binary incompatibility with ROCm packages."
+            echo "  Please report this issue at: https://github.com/thesteve0/datascience-template-ROCm/issues"
+            exit 1
+        fi
+
+        echo "✓ Created .venv with Python $VENV_PYTHON_VERSION"
     fi
 
     # Create .pth bridge to make ROCm packages accessible
     VENV_SITE_PACKAGES=$(find .venv/lib -type d -name "site-packages" | head -n 1)
+    CONTAINER_SITE_PACKAGES="/opt/venv/lib/python${CONTAINER_PYTHON_VERSION}/site-packages"
 
     if [ -n "$VENV_SITE_PACKAGES" ]; then
         PTH_FILE="$VENV_SITE_PACKAGES/_rocm_bridge.pth"
-        echo "/opt/venv/lib/python3.13/site-packages" > "$PTH_FILE"
-        echo "✓ Created .pth bridge for ROCm packages"
+        echo "$CONTAINER_SITE_PACKAGES" > "$PTH_FILE"
+        echo "✓ Created .pth bridge: $VENV_SITE_PACKAGES/_rocm_bridge.pth -> $CONTAINER_SITE_PACKAGES"
     else
         echo "ERROR: Could not find site-packages in .venv"
         exit 1
@@ -85,13 +104,13 @@ if [ -f "${WORKSPACE_DIR}/.standalone-project" ]; then
 
     # Generate exclusion list from /opt/venv packages and add to pyproject.toml
     echo "Generating ROCm package exclusion list..."
-    .venv/bin/python << 'PYEOF'
+    .venv/bin/python << PYEOF
 import json
 from pathlib import Path
 import tomli
 import tomli_w
 
-site_packages = Path('/opt/venv/lib/python3.13/site-packages')
+site_packages = Path('/opt/venv/lib/python${CONTAINER_PYTHON_VERSION}/site-packages')
 packages = {d.name.split('-')[0].replace('_', '-').lower()
             for d in site_packages.glob('*.dist-info')}
 

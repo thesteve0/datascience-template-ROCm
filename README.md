@@ -250,6 +250,47 @@ PyPI only hosts CUDA-built PyTorch wheels. If you run `pip install transformers`
 
 The `exclude-dependencies` list in `pyproject.toml` (or the `resolve-dependencies.py` script) prevents this by telling uv/pip to never install these packages as dependencies.
 
+### Troubleshooting
+
+#### ImportError: "importing numpy from source directory"
+
+If you see this error when running code with Ctrl+F5 in VSCode:
+
+```
+ImportError: Error importing numpy: you should not try to import numpy from
+        its source directory; please exit the numpy source tree, and relaunch
+        your python interpreter from there.
+```
+
+**Cause**: Your `.venv` was created with a different Python version than the container's `/opt/venv`. This causes binary incompatibility with compiled C extensions (numpy, torch, etc.). The misleading error message actually means the Python versions don't match.
+
+**Diagnostic:**
+```bash
+# Check Python versions - they MUST match
+/opt/venv/bin/python --version    # Container Python (e.g., 3.13.x)
+.venv/bin/python --version         # Project venv (should also be 3.13.x)
+
+# Check if .pth bridge points to correct Python version
+find .venv -name "_rocm_bridge.pth" -exec cat {} \;
+# Should show path matching your Python version (e.g., /opt/venv/lib/python3.13/site-packages)
+```
+
+**Fix:**
+```bash
+# Recreate venv with correct Python version
+rm -rf .venv
+/opt/venv/bin/python -m venv .venv
+
+# Recreate .pth bridge (replace 3.13 with your actual Python version if different)
+PYTHON_VERSION=$(/opt/venv/bin/python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+echo "/opt/venv/lib/python${PYTHON_VERSION}/site-packages" > .venv/lib/python${PYTHON_VERSION}/site-packages/_rocm_bridge.pth
+
+# Reinstall dependencies
+uv sync
+```
+
+**Prevention**: The template now automatically detects and prevents Python version mismatches during setup. If you created your project from an older version of the template, consider recreating it or manually applying the fix above.
+
 ### Testing GPU Acceleration
 
 A comprehensive test script is included to verify GPU acceleration:

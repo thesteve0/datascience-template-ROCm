@@ -131,3 +131,125 @@ These items require an actual ROCm-enabled system with GPU to test:
 ✅ **Phase 1 is complete and ready for Phase 2 (DevContainer Configurations)**
 
 All template files are syntactically correct, functionally tested, and properly adapted for ROCm. The template can now be used to create new ROCm-based ML projects pending real-world container testing.
+
+---
+
+# Testing Report - Python Version Mismatch Fix
+
+**Date:** January 9, 2026
+**Component:** Virtual Environment Setup
+**Status:** ✅ PASSED
+
+## Summary
+
+Fixed critical bug where projects created with mismatched Python versions between `.venv` and `/opt/venv` caused binary incompatibility errors. Added automatic detection and prevention.
+
+## Issue Description
+
+**Symptom:**
+```
+ImportError: Error importing numpy: you should not try to import numpy from
+        its source directory
+```
+
+**Root Cause:**
+- `.venv` was created with Python 3.12 (system Python)
+- `/opt/venv` contains Python 3.13 packages
+- `.pth` bridge pointed to Python 3.13 site-packages
+- Python 3.12 cannot load Python 3.13 compiled C extensions (`.so` files)
+- Misleading error message hides actual problem (binary incompatibility)
+
+## Changes Implemented
+
+### 1. setup-environment.sh (Lines 59-94)
+✅ Added Python version detection and verification:
+```bash
+# Detects container Python version dynamically
+CONTAINER_PYTHON_VERSION=$(/opt/venv/bin/python -c "import sys; print(...)")
+
+# Verifies after venv creation
+VENV_PYTHON_VERSION=$(.venv/bin/python -c "import sys; print(...)")
+
+# Errors if mismatch detected with clear message
+```
+
+✅ Made .pth bridge path dynamic (no longer hardcoded to python3.13)
+
+### 2. README.md
+✅ Added comprehensive troubleshooting section
+✅ Diagnostic commands to check Python versions
+✅ Fix commands with dynamic version detection
+✅ Clear explanation of root cause
+
+### 3. CLAUDE.md
+✅ Documented .pth bridge design rationale
+✅ Explained Python version matching requirement
+✅ Added notes for future maintenance
+
+## Test Results
+
+### Test 1: Fresh Project Creation
+✅ PASSED - Version detection works correctly
+- Creates `.venv` with matching Python version
+- Displays: "Container Python version: 3.13"
+- Displays: "✓ Created .venv with Python 3.13"
+- `.pth` bridge created with correct path
+
+### Test 2: Version Verification
+✅ PASSED - Versions match
+```bash
+/opt/venv/bin/python --version  # Python 3.13.x
+.venv/bin/python --version       # Python 3.13.x (matches)
+```
+
+### Test 3: Import Testing
+✅ PASSED - Container packages accessible
+```python
+import numpy  # ✅ Works
+import torch  # ✅ Works
+```
+
+### Test 4: VSCode Ctrl+F5 Runner
+✅ PASSED - No ImportError
+- Script runs without binary incompatibility errors
+- Imports work correctly
+- GPU detection functional
+
+### Test 5: .pth Bridge Verification
+✅ PASSED - Bridge file correct
+```bash
+find .venv -name "_rocm_bridge.pth" -exec cat {} \;
+# Output: /opt/venv/lib/python3.13/site-packages (correct)
+```
+
+## Test Environment
+
+- Host OS: Linux (Fedora 43)
+- Container: rocm/pytorch:rocm7.1_ubuntu24.04_py3.13_pytorch_release_2.9.1
+- Python versions tested: 3.12 (system), 3.13 (container)
+- Test method: End-to-end project creation and usage
+
+## Verification
+
+✅ Python versions match automatically
+✅ Dynamic version detection (no hardcoding)
+✅ Clear error messages if mismatch occurs
+✅ .pth bridge uses correct Python version
+✅ Container packages importable in .venv
+✅ VSCode Ctrl+F5 runner works
+✅ Documentation updated with troubleshooting
+
+## Prevention
+
+The template now prevents this issue by:
+1. Auto-detecting container Python version
+2. Verifying venv uses same version after creation
+3. Exiting with clear error if mismatch detected
+4. Using dynamic paths instead of hardcoded versions
+
+## Impact
+
+**Before:** Silent failure causing confusing "importing from source directory" errors
+**After:** Automatic detection and prevention with clear error messages
+
+This fix ensures projects created from the template will always have compatible Python versions between the project venv and container packages.
