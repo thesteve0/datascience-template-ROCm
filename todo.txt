@@ -56,19 +56,10 @@ rpm-ostree override reset linux-firmware linux-firmware-amd-gpu linux-firmware-i
 systemctl reboot
 ```
 
-## Questions for Aurora Discord
+## ~~Questions for Aurora Discord~~ - RESOLVED
 
-1. **Is there a safer way to downgrade firmware on Aurora?**
-   - Concerned about rpm-ostree override breaking system updates
-   - Should we wait for official fix instead?
-
-2. **How to prevent auto-updating this package?**
-   - Can we pin linux-firmware at 20251111 until fix arrives?
-   - Will override persist across system updates?
-
-3. **Alternative workarounds?**
-   - Any kernel boot parameters that help?
-   - Other Aurora users with Strix Halo experiencing this?
+Workaround has been implemented. Override will persist until manually reverted.
+No further action needed - just wait for upstream linux-firmware fix.
 
 ## Template Changes Made (may need reverting)
 
@@ -81,10 +72,10 @@ During debugging, made these changes to devcontainer.json:
 ## Current Status
 - Devcontainer template is CORRECT - not the issue
 - Host firmware is broken
-- Waiting on either:
-  - Firmware downgrade (risky on Aurora?)
-  - Official firmware fix from AMD/Fedora
-  - Aurora community guidance
+- Workaround implemented: Firmware downgraded to 20251111 using rpm-ostree override
+- **Long-term fix**: Waiting for linux-firmware maintainers to release fixed version
+  - Once fix is released and merged into Aurora, can revert the override
+  - No action needed on our end - just wait for upstream fix to land in Aurora updates
 
 After reboot, verify with:
   rpm -q amd-gpu-firmware

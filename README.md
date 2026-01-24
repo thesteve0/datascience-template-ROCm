@@ -411,6 +411,37 @@ You can configure for VSCode, JetBrains, or both:
 ./setup-project.sh --ide both
 ```
 
+#### JetBrains Setup (PyCharm/Gateway)
+
+1. **Open Project**:
+   - PyCharm Professional: File → Open → Select project directory → Trust project
+   - JetBrains Gateway: New Connection → Docker → Select devcontainer
+
+2. **Configure Python Interpreter** (Required Manual Step):
+   - Settings → Project → Python Interpreter
+   - Click Add Interpreter (⚙️) → On Docker
+   - Select the devcontainer
+   - Set interpreter path: `/workspaces/PROJECT_NAME/.venv/bin/python`
+   - Click OK
+
+3. **Configure Source Roots** (Recommended):
+   - Right-click `src/` → Mark Directory as → Sources Root
+   - Right-click `tests/` → Mark Directory as → Test Sources Root
+
+4. **Exclude Large Directories** (Improves Indexing Performance):
+   - Right-click `.venv/` → Mark Directory as → Excluded
+   - Repeat for `models/`, `datasets/`, `.cache/`
+
+5. **Verify GPU Access**:
+   - Open terminal in PyCharm
+   - Run: `amd-smi` or `rocm-smi`
+   - Run: `python -c "import torch; print(torch.cuda.is_available())"`
+
+**Known Limitations:**
+- Python interpreter cannot be auto-configured (JetBrains limitation tracked as [IJPL-174150](https://youtrack.jetbrains.com/issue/IJPL-174150))
+- Backend startup: 30-60 seconds initial startup
+- First indexing: 2-5 minutes (faster on subsequent opens)
+
 ### Data Directories
 
 The template creates these directories in your project folder:

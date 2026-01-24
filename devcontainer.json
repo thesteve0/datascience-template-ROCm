@@ -76,12 +76,18 @@
         "github.copilot",
         "ms-toolsai.jupyter"
       ]
+    },
+    "jetbrains": {
+      "backend": "PY",
+      "plugins": []
     }
   },
 
   "forwardPorts": [6006, 8888],
 
   "postCreateCommand": ".devcontainer/setup-environment.sh",
+
+  "postStartCommand": "cat /workspaces/${localWorkspaceFolderBasename}/GETTING_STARTED.md 2>/dev/null || true",
 
   "hostRequirements": {
     "gpu": "optional",

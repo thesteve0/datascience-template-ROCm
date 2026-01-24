@@ -205,3 +205,10 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Getting started guide (temporary file, deleted after setup)
+# This file is created by setup-project.sh and should be removed by user
+GETTING_STARTED.md
+
+# Template documentation (tracked for reference)
+# Do NOT ignore template_docs/ - users need these docs
