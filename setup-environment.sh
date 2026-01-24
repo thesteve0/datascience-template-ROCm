@@ -98,11 +98,12 @@ if [ -f "${WORKSPACE_DIR}/.standalone-project" ]; then
         uv init --no-readme
     fi
 
-    # Install TOML manipulation dependencies
-    echo "Installing configuration tools..."
-    uv add tomli tomli-w
+    # CRITICAL: Generate exclusion list BEFORE any uv add/sync commands
+    # This prevents uv from installing PyTorch/numpy/etc from PyPI
+    # We use pip to install tomli/tomli-w to avoid triggering a uv sync
+    echo "Installing TOML tools (via pip to avoid premature sync)..."
+    .venv/bin/pip install --quiet tomli tomli-w
 
-    # Generate exclusion list from /opt/venv packages and add to pyproject.toml
     echo "Generating ROCm package exclusion list..."
     .venv/bin/python << PYEOF
 import json
@@ -125,11 +126,26 @@ if 'uv' not in config['tool']:
 
 config['tool']['uv']['exclude-dependencies'] = sorted(packages)
 
+# Ensure tomli and tomli-w are in dependencies if not already
+deps = config.get('project', {}).get('dependencies', [])
+dep_names = [d.split('>=')[0].split('==')[0].lower() for d in deps]
+if 'tomli' not in dep_names:
+    deps.append('tomli>=2.0.0')
+if 'tomli-w' not in dep_names:
+    deps.append('tomli-w>=1.0.0')
+if 'project' not in config:
+    config['project'] = {}
+config['project']['dependencies'] = deps
+
 with open('pyproject.toml', 'wb') as f:
     tomli_w.dump(config, f)
 
 print(f"✓ Protected {len(packages)} ROCm packages from overwrite")
 PYEOF
+
+    # Now safe to run uv sync - exclusion list is in place
+    echo "Syncing project dependencies..."
+    uv sync
 
     # Verify ROCm packages accessible
     echo "Verifying ROCm package access..."

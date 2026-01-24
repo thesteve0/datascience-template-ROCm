@@ -21,6 +21,7 @@
     "--group-add=video",
     "--group-add=105",
     "--ipc=host",
+    "--shm-size=8G",
     "--cap-add=SYS_PTRACE",
     "--security-opt=seccomp=unconfined",
     "--memory=20g",
@@ -35,6 +36,8 @@
   "containerEnv": {
     "HIP_VISIBLE_DEVICES": "0",
     "ROCM_HOME": "/opt/rocm",
+    "ROCBLAS_USE_HIPBLASLT": "1",
+    "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
     "PYTHONPATH": "/workspaces/{{PROJECT_NAME}}/src",
     "HF_HOME": "/workspaces/{{PROJECT_NAME}}/.cache/huggingface",
     "TORCH_HOME": "/workspaces/{{PROJECT_NAME}}/.cache/torch",
