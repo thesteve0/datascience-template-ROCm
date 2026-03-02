@@ -9,7 +9,8 @@ This guide walks you through creating a new ML project using this ROCm template.
 Before starting, ensure you have:
 - [ ] AMD GPU with ROCm 7.2 drivers installed (`amd-smi` works on host)
 - [ ] Docker or Podman installed and running
-- [ ] VSCode with "Dev Containers" extension (or JetBrains Gateway)
+- [ ] JetBrains IDE (PyCharm, IntelliJ IDEA) with Dev Containers plugin, or VSCode with "Dev Containers" extension
+- [ ] (Optional) Google Cloud account with Vertex AI enabled (for Claude Code)
 
 See [README.md](README.md#prerequisites) for detailed setup instructions.
 
@@ -70,7 +71,21 @@ This creates:
 
 ---
 
-## Step 3: Open in VSCode
+## Step 3: Open in Your IDE
+
+### JetBrains (PyCharm/IntelliJ IDEA)
+
+1. Open PyCharm or IntelliJ IDEA
+2. **File** → **Open** → Select your project folder
+3. When prompted about the Dev Container, click **"Create Dev Container and Mount Sources"**
+   - Or: Right-click `devcontainer.json` → **Create Dev Container and Mount Sources**
+4. Wait for the container to build (5-10 minutes first time)
+5. Once ready, configure the Python interpreter:
+   - **Settings** → **Project** → **Python Interpreter**
+   - Click **Add Interpreter** → **On Docker**
+   - Set path: `/workspaces/your-project-name/.venv/bin/python`
+
+### Alternative: VSCode
 
 ```bash
 code .
@@ -81,13 +96,15 @@ When VSCode opens, you'll see a notification:
 
 Click **"Reopen in Container"**
 
+---
+
 **First build takes 5-10 minutes.** The container:
 - Downloads the ROCm PyTorch image (~15GB)
 - Installs development tools
 - Configures your Python environment
 - Sets up GPU access
 
-You can watch progress in the terminal (View → Terminal).
+You can watch progress in the terminal.
 
 ---
 
@@ -129,6 +146,7 @@ This runs comprehensive CPU vs GPU comparisons and neural network training tests
 Your project is ready! Here's how to use it:
 
 ### Run Python Code
+- **JetBrains:** Open any `.py` file and press `Shift+F10` (Run) or right-click → Run
 - **VSCode:** Open any `.py` file and press `Ctrl+F5` (Run Without Debugging)
 - **Terminal:** `python src/my_ml_project/main.py`
 
@@ -176,16 +194,41 @@ python src/my_ml_project/train.py
 
 ## Step 6 (Optional): Configure Claude Code
 
-If you're using Claude Code for AI-assisted development, update `CLAUDE.md` to describe your specific project:
+If you're using Claude Code for AI-assisted development:
+
+### Set Up Vertex AI (Before Opening Container)
+
+Claude Code uses Google Cloud Vertex AI for provisioning. Set these environment variables on your **host machine** before opening the devcontainer:
+
+```bash
+# Add to ~/.bashrc or ~/.zshrc
+export ANTHROPIC_VERTEX_PROJECT_ID="your-gcp-project-id"
+export ANTHROPIC_VERTEX_REGION="us-east5"  # or your preferred region
+export CLAUDE_CODE_USE_VERTEX="true"
+```
+
+Then authenticate with Google Cloud:
+```bash
+gcloud auth application-default login
+```
+
+The devcontainer automatically:
+- Mounts your `~/.config/gcloud` credentials (read-only)
+- Passes the environment variables into the container
+- Installs Claude Code CLI
+
+### Update CLAUDE.md for Your Project
+
+The template's CLAUDE.md contains generic information about the ROCm template. Replace it with your project-specific details:
 
 ```bash
 # Inside the container
 claude
 
-# Or edit CLAUDE.md directly with your project details
+# Or edit CLAUDE.md directly
 ```
 
-The template's CLAUDE.md contains generic information about the ROCm template. Replace it with:
+Include in your CLAUDE.md:
 - Your project's purpose and goals
 - Key files and architecture
 - Coding conventions
@@ -220,7 +263,7 @@ If something goes wrong, see [README.md#troubleshooting](README.md#troubleshooti
 
 1. **Download** template (don't `git clone`)
 2. **Run** `./setup-project.sh`
-3. **Open** in VSCode → "Reopen in Container"
+3. **Open** in JetBrains/VSCode → Create Dev Container
 4. **Wait** 5-10 minutes for first build
 5. **Test** with `python hello-gpu.py`
 6. **Code!**
