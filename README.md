@@ -436,29 +436,33 @@ You can configure for VSCode, JetBrains, or both:
 ./setup-project.sh --ide both
 ```
 
-#### JetBrains Setup (PyCharm/Gateway)
+#### JetBrains Setup (PyCharm/IntelliJ IDEA)
 
 1. **Open Project**:
-   - PyCharm Professional: File → Open → Select project directory → Trust project
+   - PyCharm Professional / IntelliJ IDEA: File → Open → Select project directory → Trust project
    - JetBrains Gateway: New Connection → Docker → Select devcontainer
 
 2. **Configure Python Interpreter** (Required Manual Step):
-   - Settings → Project → Python Interpreter
-   - Click Add Interpreter (⚙️) → On Docker
-   - Select the devcontainer
-   - Set interpreter path: `/workspaces/PROJECT_NAME/.venv/bin/python`
-   - Click OK
+   1. Open **Project Structure**: File → Project Structure (or `Ctrl+Alt+Shift+S`)
+   2. Go to **Project** under Project Settings
+   3. Click the **SDK** dropdown → **Add SDK** → **Add Python Interpreter**
+   4. In the "Add Python Interpreter" dialog:
+      - **Location**: Local Machine
+      - **Environment**: Select existing
+      - **Type**: uv
+      - **Path to uv**: `/opt/venv/bin/uv`
+      - **Environment**: Select `Python 3.12 (/workspaces/PROJECT_NAME/.venv)`
+   5. Click **OK** to confirm
 
-3. **Configure Source Roots** (Recommended):
-   - Right-click `src/` → Mark Directory as → Sources Root
-   - Right-click `tests/` → Mark Directory as → Test Sources Root
+3. **Source Roots and Excludes** (Pre-configured):
+   - The `setup-project.sh` script pre-configures `.idea/` with:
+     - `src/` as Sources Root
+     - `tests/` as Test Sources Root
+     - `.venv/`, `models/`, `datasets/`, `.cache/` as Excluded
+   - Ruff linter/formatter enabled by default
 
-4. **Exclude Large Directories** (Improves Indexing Performance):
-   - Right-click `.venv/` → Mark Directory as → Excluded
-   - Repeat for `models/`, `datasets/`, `.cache/`
-
-5. **Verify GPU Access**:
-   - Open terminal in PyCharm
+4. **Verify GPU Access**:
+   - Open terminal in IDE
    - Run: `amd-smi` or `rocm-smi`
    - Run: `python -c "import torch; print(torch.cuda.is_available())"`
 

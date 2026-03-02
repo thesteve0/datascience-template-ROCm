@@ -82,21 +82,18 @@ This creates:
 
 #### Configure Python SDK in IntelliJ IDEA
 
-**Option A: Via Project Structure**
-1. **File** → **Project Structure** (or `Ctrl+Alt+Shift+S`)
-2. **Project** → **SDK** → **Add SDK** → **Python SDK**
-3. Select **Existing environment**
-4. Set interpreter path to: `/workspaces/my-ml-project/.venv/bin/python`
-5. Click **OK**
+1. Open **Project Structure**: **File** → **Project Structure** (or `Ctrl+Alt+Shift+S`)
+2. Go to **Project** under Project Settings
+3. Click the **SDK** dropdown → **Add SDK** → **Add Python Interpreter**
+4. In the "Add Python Interpreter" dialog:
+   - **Location**: Local Machine
+   - **Environment**: Select existing
+   - **Type**: uv
+   - **Path to uv**: `/opt/venv/bin/uv`
+   - **Environment**: Select `Python 3.12 (/workspaces/my-ml-project/.venv)`
+5. Click **OK** to confirm
 
-**Option B: Via Settings**
-1. **Settings** (`Ctrl+Alt+S`) → **Project: my-ml-project** → **Python Interpreter**
-2. Click the gear icon → **Add...**
-3. Select **Existing environment**
-4. Enter path: `/workspaces/my-ml-project/.venv/bin/python`
-5. Click **OK**
-
-> **Note**: Replace `my-ml-project` with your actual project name. The `.venv` directory is created automatically during container startup and includes access to ROCm packages (PyTorch, NumPy, etc.).
+> **Note**: Replace `my-ml-project` with your actual project name. The `.venv` directory is created automatically during container startup and includes access to ROCm packages (PyTorch, NumPy, etc.). The uv integration provides proper package management support.
 
 ### Alternative: VSCode
 

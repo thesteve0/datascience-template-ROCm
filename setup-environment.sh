@@ -48,7 +48,8 @@ sudo apt-get install -y --no-upgrade \
 # Note: AMD's ROCm container already includes uv package manager and uses a
 # pre-configured venv at /opt/venv. After fixing venv ownership above,
 # pip/uv install works without sudo.
-uv pip install --no-cache-dir black flake8 pre-commit
+# Ruff replaces black (formatter) + flake8 (linter) with a single fast tool
+uv pip install --no-cache-dir ruff pre-commit
 
 # Initialize uv project for standalone mode
 # The .standalone-project marker is created by setup-project.sh for new projects
@@ -126,13 +127,15 @@ if 'uv' not in config['tool']:
 
 config['tool']['uv']['exclude-dependencies'] = sorted(packages)
 
-# Ensure tomli and tomli-w are in dependencies if not already
+# Ensure tomli, tomli-w, and ruff are in dependencies if not already
 deps = config.get('project', {}).get('dependencies', [])
 dep_names = [d.split('>=')[0].split('==')[0].lower() for d in deps]
 if 'tomli' not in dep_names:
     deps.append('tomli>=2.0.0')
 if 'tomli-w' not in dep_names:
     deps.append('tomli-w>=1.0.0')
+if 'ruff' not in dep_names:
+    deps.append('ruff>=0.4.0')
 if 'project' not in config:
     config['project'] = {}
 config['project']['dependencies'] = deps

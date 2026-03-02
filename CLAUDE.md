@@ -183,10 +183,14 @@ When working on this template or projects created from it, remember that:
   - Source roots: `src/` pre-configured as Sources, `tests/` as Test Sources
   - Excludes: `.venv/`, `models/`, `datasets/`, `.cache/` pre-configured as Excluded
 - **Manual configuration still required for Python interpreter**:
-  - Path: `/workspaces/PROJECT_NAME/.venv/bin/python`
-  - Go to: Settings → Project → Python Interpreter → Add Interpreter → Add Local Interpreter → Existing → enter path
+  1. File → Project Structure (`Ctrl+Alt+Shift+S`)
+  2. Project → SDK dropdown → Add SDK → Add Python Interpreter
+  3. Location: Local Machine, Environment: Select existing, Type: **uv**
+  4. Path to uv: `/opt/venv/bin/uv`
+  5. Environment: Select `Python 3.12 (/workspaces/PROJECT_NAME/.venv)`
+- Ruff linter/formatter enabled by default via `.idea/ruff.xml`
 
-**Python Interpreter Limitation**: JetBrains does not support automatic interpreter configuration in devcontainers ([IJPL-174150](https://youtrack.jetbrains.com/issue/IJPL-174150)). The `setup-project.sh` pre-creates `.idea/` with correct `PYTHON_MODULE` type (not `JAVA_MODULE`) so the interpreter dialog works correctly, but users must still manually enter the interpreter path.
+**Python Interpreter Limitation**: JetBrains does not support automatic interpreter configuration in devcontainers ([IJPL-174150](https://youtrack.jetbrains.com/issue/IJPL-174150)). The `setup-project.sh` pre-creates `.idea/` with correct `PYTHON_MODULE` type (not `JAVA_MODULE`) so the interpreter dialog works correctly, but users must still manually configure the interpreter using the uv type.
 
 ### Shared Infrastructure
 
