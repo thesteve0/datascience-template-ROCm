@@ -124,30 +124,27 @@ sudo dnf install podman
 
 ## Quick Start
 
-### Option A: Create New Standalone Project
+**New to this template?** See [QUICKSTART.md](QUICKSTART.md) for a step-by-step walkthrough with screenshots and detailed explanations.
+
+### TL;DR for Experienced Users
 
 ```bash
-# 1. Clone this template
-git clone https://github.com/YOUR_USERNAME/datascience-template-ROCm.git my-ml-project
+# 1. Download template (don't git clone - you want a fresh repo)
+#    GitHub → Code → Download ZIP → Extract and rename to your project
+
+# 2. Run setup
 cd my-ml-project
+./setup-project.sh    # Select IDE, enter git info
 
-# 2. Run setup (select IDE when prompted)
-./setup-project.sh
-
-# 3. Open in VSCode
+# 3. Open in VSCode → "Reopen in Container" (5-10 min first build)
 code .
 
-# 4. When prompted, click "Reopen in Container"
-#    (First build takes 5-10 minutes)
+# 4. Test GPU access
+python hello-gpu.py   # Quick sanity check (30 sec)
+python test-gpu.py    # Full benchmark (2-3 min)
 
-# 5. Inside container, verify GPU access
-amd-smi
-python test-gpu.py  # Comprehensive GPU test with performance benchmarks
-
-# 6. Install your dependencies
-echo "transformers>=4.30.0" > requirements.txt
-python scripts/resolve-dependencies.py requirements.txt
-uv pip install -r requirements-filtered.txt
+# 5. Add dependencies and start coding
+uv add transformers datasets
 ```
 
 ### Option B: Integrate Existing Repository
@@ -186,7 +183,8 @@ my-ml-project/
 ├── models/                     # Persistent volume mount
 ├── datasets/                   # Persistent volume mount
 ├── .cache/                     # Persistent volume mount
-├── test-gpu.py                 # GPU acceleration test script
+├── hello-gpu.py                # Quick GPU sanity check
+├── test-gpu.py                 # Comprehensive GPU benchmark
 ├── setup-project.sh            # Project setup script
 └── cleanup-script.sh           # Cleanup utility
 ```
@@ -314,8 +312,14 @@ uv sync
 
 ### Testing GPU Acceleration
 
-A comprehensive test script is included to verify GPU acceleration:
+Two test scripts are included:
 
+**Quick sanity check (30 seconds):**
+```bash
+python hello-gpu.py
+```
+
+**Comprehensive benchmark (2-3 minutes):**
 ```bash
 python test-gpu.py
 ```
@@ -415,7 +419,7 @@ The test validates your ROCm setup is working correctly and shows GPU benefits a
 amd-smi
 
 # Quick PyTorch GPU test
-python -c "import torch; print(f'GPU: {torch.cuda.is_available()}')"
+python hello-gpu.py
 ```
 
 ### IDE Selection
@@ -601,7 +605,7 @@ docker run -it --device=/dev/kfd --device=/dev/dri \
     rocm/pytorch:latest amd-smi
 
 # Verify PyTorch can see GPU
-python -c "import torch; print(torch.cuda.is_available())"
+python hello-gpu.py
 
 # Run comprehensive GPU test
 python test-gpu.py
