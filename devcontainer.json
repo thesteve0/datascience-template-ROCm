@@ -81,14 +81,15 @@
       ]
     },
     "jetbrains": {
-      "backend": "PY",
+      "backend": "IU",
       "plugins": [
-        "Pythonid",
+        "PythonCore",
         "net.ashald.envfile",
         "ru.adelf.idea.dotenv",
         "net.seesharpsoft.intellij.plugins.csv",
         "nl.bryanderidder.regexrenamefiles",
-        "com.intellij.plugins.watcher"
+        "com.intellij.plugins.watcher",
+        "intellij.python.lsp"
       ]
     }
   },
