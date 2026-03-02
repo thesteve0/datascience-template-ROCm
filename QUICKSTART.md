@@ -78,10 +78,25 @@ This creates:
 3. When prompted about the Dev Container, click **"Create Dev Container and Mount Sources"**
    - Or: Right-click `devcontainer.json` → **Create Dev Container and Mount Sources**
 4. Wait for the container to build (5-10 minutes first time)
-5. Once ready, configure the Python interpreter:
-   - **Settings** → **Project** → **Python Interpreter**
-   - Click **Add Interpreter** → **On Docker**
-   - Set path: `/workspaces/your-project-name/.venv/bin/python`
+5. Once ready, configure the Python interpreter (required - not auto-configured):
+
+#### Configure Python SDK in IntelliJ IDEA
+
+**Option A: Via Project Structure**
+1. **File** → **Project Structure** (or `Ctrl+Alt+Shift+S`)
+2. **Project** → **SDK** → **Add SDK** → **Python SDK**
+3. Select **Existing environment**
+4. Set interpreter path to: `/workspaces/my-ml-project/.venv/bin/python`
+5. Click **OK**
+
+**Option B: Via Settings**
+1. **Settings** (`Ctrl+Alt+S`) → **Project: my-ml-project** → **Python Interpreter**
+2. Click the gear icon → **Add...**
+3. Select **Existing environment**
+4. Enter path: `/workspaces/my-ml-project/.venv/bin/python`
+5. Click **OK**
+
+> **Note**: Replace `my-ml-project` with your actual project name. The `.venv` directory is created automatically during container startup and includes access to ROCm packages (PyTorch, NumPy, etc.).
 
 ### Alternative: VSCode
 

@@ -82,7 +82,14 @@
     },
     "jetbrains": {
       "backend": "PY",
-      "plugins": []
+      "plugins": [
+        "Pythonid",
+        "net.ashald.envfile",
+        "ru.adelf.idea.dotenv",
+        "net.seesharpsoft.intellij.plugins.csv",
+        "nl.bryanderidder.regexrenamefiles",
+        "com.intellij.plugins.watcher"
+      ]
     }
   },
 
