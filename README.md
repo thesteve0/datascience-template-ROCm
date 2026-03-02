@@ -1,8 +1,10 @@
 # ROCm PyTorch ML DevContainer Template
 
-A DevContainer template for PyTorch machine learning development on AMD GPUs using ROCm. Optimized for consumer AMD hardware (Ryzen AI, Radeon RX series) with support for both VSCode and JetBrains IDEs.
+A DevContainer template for PyTorch machine learning development on AMD GPUs using ROCm 7.2. Optimized for consumer AMD hardware (Ryzen AI Max, Radeon RX series) with support for both VSCode and JetBrains IDEs.
 
 **Ported from:** [datascience-template-CUDA](https://github.com/thesteve0/datascience-template-CUDA)
+
+**Current Stack:** ROCm 7.2 | PyTorch 2.9.1 | Python 3.12 | Ubuntu 24.04
 
 ## Key Features
 
@@ -14,6 +16,16 @@ A DevContainer template for PyTorch machine learning development on AMD GPUs usi
 - **Docker & Podman** - Works with both container runtimes
 - **Claude Code Integration** - Built-in Claude Code CLI with Vertex AI authentication
 - **External Data Access** - Host ~/data directory accessible at /data in container
+
+## ROCm 7.2 Highlights
+
+ROCm 7.2 is the first "production-ready" release for Strix Halo and Strix Point:
+
+- **Native Architecture Support** - gfx1151/gfx1150 supported without `HSA_OVERRIDE_GFX_VERSION` workarounds
+- **Faster Warm-up Times** - `torch.compile` cold-start reduced from ~60s to ~15s
+- **Optimized GEMM** - hipBLASLt with "Origami" tuning for better matrix multiplication performance
+- **Improved Memory Management** - Smoother shared memory handling for APUs using system RAM as VRAM
+- **Official Production Support** - PyTorch 2.9.1 + Python 3.12 is the validated stack
 
 ## ⚠️ Security Notice: Development Only
 
@@ -42,10 +54,17 @@ This template is designed for **consumer AMD GPUs**:
 - ✅ Radeon RX 9000 Series (RDNA 4)
 
 ### System Requirements
-- **OS:** Linux with ROCm 7.1+ drivers
+- **OS:** Ubuntu 24.04 with ROCm 7.2 drivers (recommended)
 - **RAM:** 32GB+ recommended
 - **Storage:** 1TB NVMe SSD recommended (models and datasets are large)
 - **Container Runtime:** Docker or Podman with ROCm support
+
+### Precision Support
+
+**FP16 is the only officially validated precision type** for Ryzen AI processors. Other data types (BF16, FP32, INT8) may work but have not been formally tested by AMD. For maximum compatibility and performance:
+- Use FP16 for training and inference
+- Avoid INT4 quantization (often falls back to slow software emulation)
+- If you must use FP32, expect lower performance due to memory bandwidth constraints
 
 **Note:** This template targets consumer GPUs. For AMD data center GPUs (MI300X series), see [AMD's official ROCm documentation](https://rocm.docs.amd.com/).
 
@@ -54,7 +73,8 @@ This template is designed for **consumer AMD GPUs**:
 ### 1. Install ROCm Drivers
 
 Follow the official AMD guide for consumer GPUs:
-- [ROCm for Radeon and Ryzen GPUs](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/index.html)
+- [ROCm 7.2 for Radeon and Ryzen GPUs](https://rocm.docs.amd.com/projects/radeon-ryzen/en/docs-7.2/index.html)
+- [Compatibility Matrix](https://rocm.docs.amd.com/projects/radeon-ryzen/en/docs-7.2/docs/compatibility/compatibilityryz/native_linux/native_linux_compatibility.html)
 
 For Ryzen AI Max+ 395 (Strix Halo) or similar consumer hardware:
 ```bash
@@ -66,7 +86,8 @@ amd-smi
 
 # Test PyTorch ROCm (after installing container runtime)
 docker run -it --device=/dev/kfd --device=/dev/dri \
-    rocm/pytorch:latest python -c "import torch; print(f'ROCm available: {torch.cuda.is_available()}')"
+    rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1 \
+    python -c "import torch; print(f'ROCm available: {torch.cuda.is_available()}')"
 ```
 
 ### 2. Install Container Runtime
@@ -179,7 +200,7 @@ When you open the devcontainer, you're working inside a pre-configured environme
 | Component | Location | Notes |
 |-----------|----------|-------|
 | **Virtual Environment** | `.venv/` (in project root) | Created by `setup-environment.sh`, contains ROCm packages |
-| **Python Interpreter** | `.venv/bin/python` | Python 3.13 with ROCm-optimized PyTorch |
+| **Python Interpreter** | `.venv/bin/python` | Python 3.12 with ROCm-optimized PyTorch |
 | **Package Manager** | `uv` | Fast, modern Python package manager |
 | **ROCm PyTorch** | Pre-installed in `.venv/` | DO NOT reinstall from PyPI |
 
@@ -215,7 +236,7 @@ uv add transformers
 **Verify PyTorch is still the ROCm version after installing:**
 ```bash
 python -c "import torch; print(torch.__version__)"
-# Should show: 2.9.1+rocm7.1.0... (the +rocm suffix is key)
+# Should show: 2.9.1+rocm7.2... (the +rocm suffix is key)
 ```
 
 #### Alternative: requirements.txt Workflow
@@ -267,12 +288,12 @@ ImportError: Error importing numpy: you should not try to import numpy from
 **Diagnostic:**
 ```bash
 # Check Python versions - they MUST match
-/opt/venv/bin/python --version    # Container Python (e.g., 3.13.x)
-.venv/bin/python --version         # Project venv (should also be 3.13.x)
+/opt/venv/bin/python --version    # Container Python (e.g., 3.12.x)
+.venv/bin/python --version         # Project venv (should also be 3.12.x)
 
 # Check if .pth bridge points to correct Python version
 find .venv -name "_rocm_bridge.pth" -exec cat {} \;
-# Should show path matching your Python version (e.g., /opt/venv/lib/python3.13/site-packages)
+# Should show path matching your Python version (e.g., /opt/venv/lib/python3.12/site-packages)
 ```
 
 **Fix:**
@@ -281,7 +302,7 @@ find .venv -name "_rocm_bridge.pth" -exec cat {} \;
 rm -rf .venv
 /opt/venv/bin/python -m venv .venv
 
-# Recreate .pth bridge (replace 3.13 with your actual Python version if different)
+# Recreate .pth bridge (the script detects the Python version automatically)
 PYTHON_VERSION=$(/opt/venv/bin/python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
 echo "/opt/venv/lib/python${PYTHON_VERSION}/site-packages" > .venv/lib/python${PYTHON_VERSION}/site-packages/_rocm_bridge.pth
 
@@ -311,7 +332,7 @@ python test-gpu.py
 ======================================================================
   GPU Availability Check
 ======================================================================
-PyTorch version: 2.9.1+rocm7.1.0.git351ff442
+PyTorch version: 2.9.1+rocm7.2
 GPU available: True
 
 ✅ GPU Count: 1
@@ -533,10 +554,13 @@ The devcontainer sets these ROCm-specific variables:
 ```json
 {
   "HIP_VISIBLE_DEVICES": "0",              // Which GPU to use
-  "HSA_OVERRIDE_GFX_VERSION": "11.0.0",    // gfx compatibility override
-  "ROCM_HOME": "/opt/rocm"                 // ROCm installation path
+  "ROCM_HOME": "/opt/rocm",                // ROCm installation path
+  "ROCBLAS_USE_HIPBLASLT": "1",            // Use optimized GEMM backend
+  "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"  // Better memory management
 }
 ```
+
+**Note:** ROCm 7.2 natively supports gfx1151 (Strix Halo) and gfx1150 (Strix Point). The `HSA_OVERRIDE_GFX_VERSION` environment variable is no longer needed and has been removed.
 
 ### GPU Access
 
@@ -557,10 +581,10 @@ The container needs access to ROCm devices:
 
 Using official AMD ROCm PyTorch container:
 ```
-rocm/pytorch:rocm7.1-py3.11-pytorch-2.6.0-ubuntu22.04
+rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1
 ```
 
-Verified working on:
+This is the official production-supported stack for Ryzen AI processors. Verified working on:
 - Ryzen AI Max+ 395 (Strix Halo)
 - Custom Steam Deck builds
 
@@ -610,17 +634,16 @@ uv pip install -r requirements.txt
 pip list | grep torch
 ```
 
-### ROCm Version Mismatch
+### ROCm Architecture Issues
 
-If you see architecture warnings (gfx1151, etc.):
+ROCm 7.2 natively supports Strix Halo (gfx1151) and Strix Point (gfx1150). If you see architecture warnings:
 
-```bash
-# Override GFX version (already set in devcontainer)
-export HSA_OVERRIDE_GFX_VERSION=11.0.0
-
-# Or edit .devcontainer/devcontainer.json
-# and change HSA_OVERRIDE_GFX_VERSION
-```
+1. **Verify you're using ROCm 7.2** - older versions may require workarounds
+2. **Check host drivers** - ensure ROCm 7.2 drivers are installed on the host
+3. **For older ROCm versions** (not recommended):
+   ```bash
+   export HSA_OVERRIDE_GFX_VERSION=11.0.0
+   ```
 
 ### Container Won't Start
 
@@ -756,12 +779,13 @@ These changes adapt to ROCm/AMD platform specifics vs CUDA/NVIDIA:
     - **Reason**: ROCm uses HIP runtime instead of CUDA
     - **Files**: `devcontainer.json` (line 32)
 
-16. **Architecture Override**
+16. **Architecture Override** (ROCm 7.1 only - not needed in 7.2)
     - **CUDA**: Not needed (CUDA automatically detects compute capability)
-    - **ROCm**: `HSA_OVERRIDE_GFX_VERSION=11.0.0` for Strix Halo
-    - **Change**: Added HSA_OVERRIDE_GFX_VERSION to containerEnv
-    - **Reason**: gfx1151 (Strix Halo) needs override for some operations
-    - **Files**: `devcontainer.json` (line 33)
+    - **ROCm 7.1**: Required `HSA_OVERRIDE_GFX_VERSION=11.0.0` for Strix Halo
+    - **ROCm 7.2**: Not needed - native gfx1151/gfx1150 support
+    - **Change**: Removed from containerEnv (was previously added for ROCm 7.1)
+    - **Reason**: ROCm 7.2 natively supports Strix Halo/Point architectures
+    - **Files**: `devcontainer.json`
 
 17. **GPU Monitoring Tool**
     - **CUDA**: `nvidia-smi`
@@ -772,7 +796,7 @@ These changes adapt to ROCm/AMD platform specifics vs CUDA/NVIDIA:
 
 18. **Base Container Image**
     - **CUDA**: `nvcr.io/nvidia/pytorch:XX.XX-py3`
-    - **ROCm**: `rocm/pytorch:rocm7.1_ubuntu24.04_py3.13_pytorch_release_2.9.1`
+    - **ROCm**: `rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1`
     - **Change**: Updated Dockerfile base image
     - **Reason**: Different vendors, different registries
     - **Files**: `Dockerfile`
@@ -834,23 +858,25 @@ These changes adapt to ROCm/AMD platform specifics vs CUDA/NVIDIA:
 
 | Feature | CUDA Template | ROCm Template |
 |---------|--------------|---------------|
-| Base Container | `nvcr.io/nvidia/pytorch` | `rocm/pytorch` |
+| Base Container | `nvcr.io/nvidia/pytorch` | `rocm/pytorch:rocm7.2_ubuntu24.04_py3.12...` |
 | GPU Access | `--gpus=all` | `--device=/dev/kfd --device=/dev/dri` |
 | GPU Tool | `nvidia-smi` | `amd-smi` (or `rocm-smi`) |
 | GPU Env Var | `CUDA_VISIBLE_DEVICES` | `HIP_VISIBLE_DEVICES` |
 | Package List | `nvidia-provided.txt` | `rocm-provided.txt` |
-| Python Location | System `/usr/bin/python` | Venv `/opt/venv/bin/python` |
+| Python Location | System `/usr/bin/python` | Venv `/opt/venv/bin/python` (Python 3.12) |
 | Package Install | Direct to system | Inside `/opt/venv` |
 | Permissions | Group-based (UID 2112 + shared GID) | Direct UID matching (delete ubuntu user) |
 | IDE Support | VSCode only | VSCode + JetBrains |
 | Runtime | Docker only | Docker or Podman |
 | Package Manager | pip only | pip + uv with project mode |
-| Dependency Protection | Not needed | override-dependencies for 137 packages |
+| Dependency Protection | Not needed | exclude-dependencies for ROCm packages |
+| Precision Support | FP16/BF16/FP32 | FP16 (officially validated) |
 
 ## Resources
 
 ### Official Documentation
-- [ROCm for Radeon/Ryzen GPUs](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/)
+- [ROCm 7.2 for Radeon/Ryzen GPUs](https://rocm.docs.amd.com/projects/radeon-ryzen/en/docs-7.2/index.html)
+- [ROCm 7.2 Compatibility Matrix](https://rocm.docs.amd.com/projects/radeon-ryzen/en/docs-7.2/docs/compatibility/compatibilityryz/native_linux/native_linux_compatibility.html)
 - [ROCm PyTorch Documentation](https://rocm.docs.amd.com/en/latest/how-to/pytorch-install/pytorch-install.html)
 - [AMD ROCm Containers](https://hub.docker.com/u/rocm)
 

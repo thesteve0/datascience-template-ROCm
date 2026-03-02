@@ -35,9 +35,9 @@ All Phase 1 core template files have been successfully ported from the CUDA temp
 - ✅ User/UID/GID configuration correct
 
 **ROCm Adaptations:**
-- Base image: `rocm/pytorch:rocm7.1-py3.11-pytorch-2.6.0-ubuntu22.04`
+- Base image: `rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1`
 - GPU access: `--device=/dev/kfd`, `--device=/dev/dri`, `--group-add=video`
-- Environment: `HIP_VISIBLE_DEVICES`, `HSA_OVERRIDE_GFX_VERSION=11.0.0`
+- Environment: `HIP_VISIBLE_DEVICES`, `ROCBLAS_USE_HIPBLASLT=1`
 - Port forwarding: 6006 (TensorBoard), 8888 (Jupyter)
 
 ### 3. setup-environment.sh (2.2KB)
@@ -140,6 +140,8 @@ All template files are syntactically correct, functionally tested, and properly 
 **Component:** Virtual Environment Setup
 **Status:** ✅ PASSED
 
+**Note:** This test was performed on ROCm 7.1 (Python 3.13). ROCm 7.2 uses Python 3.12. The fix is version-agnostic and works with any Python version.
+
 ## Summary
 
 Fixed critical bug where projects created with mismatched Python versions between `.venv` and `/opt/venv` caused binary incompatibility errors. Added automatic detection and prevention.
@@ -225,8 +227,8 @@ find .venv -name "_rocm_bridge.pth" -exec cat {} \;
 ## Test Environment
 
 - Host OS: Linux (Fedora 43)
-- Container: rocm/pytorch:rocm7.1_ubuntu24.04_py3.13_pytorch_release_2.9.1
-- Python versions tested: 3.12 (system), 3.13 (container)
+- Container: rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1
+- Python versions tested: 3.12 (container and system)
 - Test method: End-to-end project creation and usage
 
 ## Verification

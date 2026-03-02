@@ -44,13 +44,16 @@ This file tracks the roadmap for porting the CUDA data science template to ROCm 
   - Handles both training and inference
   - Actively maintained, not deprecated
 - [ ] Test GPU access in selected container (needs implementation)
-- [ ] Document exact ROCm version and PyTorch version used
+- [x] Document exact ROCm version and PyTorch version used
+  - **ROCm 7.2** with **PyTorch 2.9.1** and **Python 3.12** (Ubuntu 24.04)
+  - FP16 is the only officially validated precision type
+  - Native gfx1151/gfx1150 support (no HSA_OVERRIDE_GFX_VERSION needed)
 
 ### VSCode DevContainer
 - [x] Port `devcontainer.json` template
-  - [x] Update base image to ROCm container (rocm/pytorch:rocm7.1-py3.11-pytorch-2.6.0-ubuntu22.04)
+  - [x] Update base image to ROCm container (rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1)
   - [x] Configure ROCm GPU runtime arguments (--device=/dev/kfd, --device=/dev/dri)
-  - [x] Update environment variables (CUDA → HIP/ROCm)
+  - [x] Update environment variables (CUDA → HIP/ROCm, added ROCBLAS_USE_HIPBLASLT)
   - [x] Configure persistent volumes (models, datasets, cache)
   - [x] Add VSCode extensions for Python/ML development
   - [x] Configure port forwarding (TensorBoard, Jupyter, etc.)
@@ -85,8 +88,9 @@ This file tracks the roadmap for porting the CUDA data science template to ROCm 
   - [x] Added troubleshooting documentation to README.md
   - [x] Documented .pth bridge design rationale in CLAUDE.md
   - **Issue**: Projects created with wrong Python version caused "importing numpy from source directory" errors
-  - **Root Cause**: Binary incompatibility when Python 3.12 .venv tries to load Python 3.13 C extensions
+  - **Root Cause**: Binary incompatibility when .venv Python version doesn't match container's /opt/venv
   - **Solution**: Automatic version detection and verification prevents silent failures
+  - **Note**: ROCm 7.2 uses Python 3.12 (ROCm 7.1 used Python 3.13)
 - [ ] Improve conflict detection algorithm
 - [ ] Add support for poetry/pdm/pixi in addition to requirements.txt
 - [ ] Better error messages when conflicts detected

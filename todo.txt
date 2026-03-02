@@ -10,9 +10,9 @@
 - Minimal Docker test reproduces issue (not devcontainer config problem):
   ```bash
   docker run --rm -it --device=/dev/kfd --device=/dev/dri --group-add=video \
-    rocm/pytorch:rocm7.1_ubuntu24.04_py3.13_pytorch_release_2.9.1 \
+    rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1 \
     python3 -c "import torch; t = torch.tensor([1.0]).cuda(); print(t)"
-  # Result: Memory access fault
+  # Result: Memory access fault (if firmware is broken)
   ```
 
 - Current firmware version: linux-firmware-20251125-1.fc43.noarch
@@ -45,7 +45,7 @@ systemctl reboot
 **After reboot, test:**
 ```bash
 docker run --rm -it --device=/dev/kfd --device=/dev/dri --group-add=video \
-  rocm/pytorch:rocm7.1_ubuntu24.04_py3.13_pytorch_release_2.9.1 \
+  rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1 \
   python3 -c "import torch; t = torch.tensor([1.0]).cuda(); print(t)"
 ```
 
@@ -61,13 +61,13 @@ systemctl reboot
 Workaround has been implemented. Override will persist until manually reverted.
 No further action needed - just wait for upstream linux-firmware fix.
 
-## Template Changes Made (may need reverting)
+## Template Changes Made - CONFIRMED CORRECT
 
 During debugging, made these changes to devcontainer.json:
-1. Added `--group-add=105` (render group) - technically correct per AMD docs
-2. Removed `HSA_OVERRIDE_GFX_VERSION: "11.0.0"` - correct for gfx1151
+1. Added `--group-add=105` (render group) - correct per AMD docs
+2. Removed `HSA_OVERRIDE_GFX_VERSION: "11.0.0"` - correct for ROCm 7.2 (native gfx1151 support)
 
-**Decision needed**: Keep these changes (they're AMD-recommended) or revert?
+**Decision**: Keep these changes - they're correct for ROCm 7.2.
 
 ## Current Status
 - Devcontainer template is CORRECT - not the issue
@@ -83,7 +83,7 @@ After reboot, verify with:
 
   Then test the GPU:
   docker run --rm -it --device=/dev/kfd --device=/dev/dri --group-add=video \
-    rocm/pytorch:rocm7.1_ubuntu24.04_py3.13_pytorch_release_2.9.1 \
+    rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1 \
     python3 -c "import torch; t = torch.tensor([1.0]).cuda(); print(t)"
 
 

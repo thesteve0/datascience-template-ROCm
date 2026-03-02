@@ -19,7 +19,7 @@ The template follows a fork-friendly devcontainer design with these core compone
 
 ### Core Components
 
-- **Base Container**: Official AMD `rocm/pytorch` container (user-verified working on Strix Halo and Steam Deck)
+- **Base Container**: Official AMD `rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1` (user-verified working on Strix Halo and Steam Deck)
 - **Multi-IDE Devcontainers**: Full development environment configurations for both VSCode and JetBrains (created by setup script)
 - **GPU Access**: Direct AMD GPU access inside containers
 - **Persistent Volumes**: Separate named volumes for models, datasets, and caches to survive container rebuilds
@@ -46,15 +46,19 @@ datascience-template-ROCm/
 
 This template is specifically designed for **consumer AMD GPUs**:
 - AMD Ryzen AI Max+ 395 (Strix Halo - gfx1151 architecture)
+- AMD Ryzen AI 300 Series (Strix Point - gfx1150 architecture)
 - Custom Steam Deck configurations
 - Similar consumer-grade AMD APUs with integrated graphics
 
 **Official Documentation for Consumer GPUs**:
-- [Use ROCm on Radeon and Ryzen](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/index.html)
-  - ROCm 7.1 preview release for Radeon GPUs and Ryzen APUs
-  - Ryzen AI Max 300 Series support (includes AI Max+ 395)
-  - PyTorch support in preview for Ryzen APUs
+- [ROCm 7.2 for Radeon and Ryzen](https://rocm.docs.amd.com/projects/radeon-ryzen/en/docs-7.2/index.html)
+  - ROCm 7.2 is the first "production-ready" release for Strix Halo/Point
+  - Native gfx1151/gfx1150 support (no HSA_OVERRIDE_GFX_VERSION needed)
+  - PyTorch 2.9.1 with official production support
   - Up to 128GB shared memory on Ryzen APUs
+- [Compatibility Matrix](https://rocm.docs.amd.com/projects/radeon-ryzen/en/docs-7.2/docs/compatibility/compatibilityryz/native_linux/native_linux_compatibility.html)
+
+**Precision Support**: FP16 is the only officially validated precision type. Other data types (BF16, FP32, INT8) may work but have not been formally tested by AMD.
 
 **Note**: While AMD's general ROCm documentation focuses on data center GPUs (MI300X series), the consumer GPU guide above and the `rocm/pytorch` image have been verified to work on Ryzen/Radeon hardware.
 
@@ -105,17 +109,17 @@ The template uses a `.pth` bridge file approach (NOT `--system-site-packages`) t
 
 The `.venv` MUST be created with `/opt/venv/bin/python` to ensure Python version consistency:
 
-- Container's `/opt/venv` uses Python 3.13 (as of ROCm 7.1 containers)
-- If `.venv` is created with system Python 3.12, **binary incompatibility** breaks numpy/torch imports
+- Container's `/opt/venv` uses Python 3.12 (as of ROCm 7.2 containers)
+- If `.venv` is created with a different system Python version, **binary incompatibility** breaks numpy/torch imports
 - The misleading error "importing numpy from source directory" actually means "C extension binary incompatibility"
-- Python 3.12 cannot load `.so` files compiled for Python 3.13 (and vice versa)
+- Python versions cannot load `.so` files compiled for different Python versions
 
 **How It Works:**
 
 1. `setup-environment.sh` detects container Python version: `/opt/venv/bin/python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"`
 2. Creates `.venv` using that Python: `/opt/venv/bin/python -m venv .venv`
 3. Verifies versions match after creation (exits with error if mismatch detected)
-4. Creates dynamic `.pth` bridge: `.venv/lib/pythonX.Y/site-packages/_rocm_bridge.pth` → `/opt/venv/lib/pythonX.Y/site-packages`
+4. Creates dynamic `.pth` bridge: `.venv/lib/python3.12/site-packages/_rocm_bridge.pth` → `/opt/venv/lib/python3.12/site-packages`
 5. Python loads the .pth file and adds `/opt/venv` to sys.path
 6. Container packages (torch, numpy) become importable
 7. uv's `exclude-dependencies` still prevents installing excluded packages
@@ -157,7 +161,7 @@ When working on this template or projects created from it, remember that:
 - Custom configurations (e.g., Steam Deck with custom Ryzen chips)
 
 **System Requirements**:
-- Linux host with ROCm 7.1+ drivers installed (preview release for consumer GPUs)
+- Linux host with ROCm 7.2+ drivers installed (production release for consumer GPUs)
 - Docker with proper ROCm container support
 - Recommended: 32GB+ RAM, 1TB NVMe SSD
 - Check [ROCm Radeon/Ryzen compatibility matrix](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/index.html) for your specific hardware
@@ -235,10 +239,10 @@ The template supports cloning external projects into the workspace while maintai
 
 Comparison of AMD ROCm Docker images:
 
-- **rocm/pytorch**: General-purpose, inference-focused, actively maintained ✅ **SELECTED**
+- **rocm/pytorch**: General-purpose, training and inference, actively maintained ✅ **SELECTED**
   - Works on Strix Halo and Steam Deck (user-verified)
   - Handles both training and inference
-  - ROCm 7.1.0 available
+  - ROCm 7.2 with Python 3.12 and PyTorch 2.9.1
 
 - **rocm/pytorch-training**: Training-focused, ⚠️ being deprecated in favor of primus
   - Not recommended for new projects
@@ -250,16 +254,17 @@ Comparison of AMD ROCm Docker images:
 
 ## Current Status
 
-Repository is in initial setup phase with base image decision made. Next steps are to port scripts and configurations from the CUDA template.
+Template is feature-complete with ROCm 7.2 support. Ready for end-to-end testing and release preparation.
 
 ## Important Resources
 
 ### Official AMD Documentation
-- **[ROCm for Radeon and Ryzen GPUs](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/index.html)** - Primary documentation for consumer GPU support
-  - ROCm 7.1 preview release notes
-  - PyTorch installation for Ryzen APUs
+- **[ROCm 7.2 for Radeon and Ryzen GPUs](https://rocm.docs.amd.com/projects/radeon-ryzen/en/docs-7.2/index.html)** - Primary documentation for consumer GPU support
+  - ROCm 7.2 production release notes
+  - PyTorch 2.9.1 installation for Ryzen APUs
   - Compatibility matrices for Radeon/Ryzen hardware
   - Framework support (PyTorch, TensorFlow, JAX, ONNX Runtime)
+- **[ROCm 7.2 Compatibility Matrix](https://rocm.docs.amd.com/projects/radeon-ryzen/en/docs-7.2/docs/compatibility/compatibilityryz/native_linux/native_linux_compatibility.html)** - Supported precision types and hardware
 
 - **[ROCm General Documentation](https://rocm.docs.amd.com/)** - Data center GPU focused (MI300X series)
   - Training and inference guides
