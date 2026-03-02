@@ -210,5 +210,14 @@ __marimo__/
 # This file is created by setup-project.sh and should be removed by user
 GETTING_STARTED.md
 
-# Template documentation (tracked for reference)
-# Do NOT ignore template_docs/ - users need these docs
+# ROCm Devcontainer Template - Volume Mounts
+# These directories are mounted as Docker volumes and persist separately
+models/
+datasets/
+.cache/
+
+# Template files (remove after customizing your project)
+QUICKSTART.MD
+hello-gpu.py
+test-gpu.py
+template_docs/
