@@ -23,13 +23,11 @@ Download or copy this template to start your new project. **Do not use `git clon
 ### Option A: Download ZIP (Easiest)
 
 1. Go to the template repository on GitHub
-2. Click **Code** → **Download ZIP**
-3. Extract to your projects folder and rename:
+2. Click **Code** → **Download ZIP** (saves to ~/Downloads)
+3. Extract and rename in one step:
    ```bash
-   cd ~/projects
-   unzip datascience-template-ROCm-main.zip
-   mv datascience-template-ROCm-main my-ml-project
-   cd my-ml-project
+   unzip -q ~/Downloads/datascience-template-ROCm-main.zip -d ~/git && mv ~/git/datascience-template-ROCm-main ~/git/my-ml-project
+   cd ~/git/my-ml-project
    ```
 
 ### Option B: Clone and Disconnect
