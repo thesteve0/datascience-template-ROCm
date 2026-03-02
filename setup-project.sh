@@ -359,6 +359,16 @@ docker run -it --device=/dev/kfd --device=/dev/dri rocm/pytorch:latest amd-smi
 python -c "import torch; print(torch.cuda.is_available())"
 ```
 
+## Linting/Formatting (Ruff)
+
+```bash
+ruff check src/        # Lint code
+ruff format src/       # Format code
+ruff check --fix src/  # Auto-fix linting issues
+```
+
+Ruff is pre-configured and enabled by default in both VSCode and JetBrains.
+
 ## Data Directories
 
 - `./models/` - Model checkpoints (persists across rebuilds)
@@ -532,10 +542,11 @@ python src/data/preprocess.py --input datasets/raw --output datasets/processed
 pytest tests/
 ```
 
-**Linting/Formatting** (if configured):
+**Linting/Formatting**:
 ```bash
-black src/
-flake8 src/
+ruff check src/        # Lint code
+ruff format src/       # Format code
+ruff check --fix src/  # Auto-fix linting issues
 ```
 
 ## Architectural Decisions

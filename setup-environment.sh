@@ -183,4 +183,5 @@ fi
 
 echo ""
 echo "Setup complete!"
-echo "Store models in ./models/ and datasets in ./datasets/ - they persist across container rebuilds"
+echo "  - Ruff linter/formatter installed and configured"
+echo "  - Store models in ./models/ and datasets in ./datasets/ - they persist across container rebuilds"

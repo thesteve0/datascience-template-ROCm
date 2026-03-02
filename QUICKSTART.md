@@ -179,6 +179,18 @@ uv sync
 
 The template automatically protects ROCm packages (torch, numpy, etc.) from being overwritten by PyPI versions.
 
+### Linting and Formatting (Ruff)
+
+Ruff is pre-installed and configured for both linting and formatting:
+
+```bash
+ruff check src/        # Lint code
+ruff format src/       # Format code
+ruff check --fix src/  # Auto-fix linting issues
+```
+
+Both VSCode and JetBrains are pre-configured to use Ruff with format-on-save enabled.
+
 ### Create Your First Script
 
 Create `src/my_ml_project/train.py`:
