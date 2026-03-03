@@ -30,25 +30,25 @@ ROCm 7.2 is not just a bug-fix release; it introduces architectural changes that
 | **Memory Handover** | Improved `hipMemset` and async memory handling. | Smoother shared memory management (critical for APUs using system RAM as VRAM), resulting in fewer stutters in ComfyUI. |
 | **Official Support** | Native support for `gfx1151` (Halo) and `gfx1150` (Point). | No longer need to set `HSA_OVERRIDE_GFX_VERSION` environment variables, which was a major source of instability in 7.1. |
 
-### **3. Recommendation: B16 (BF16) vs. B32 (FP32)**
+### **3. Recommendation: FP16 vs. FP32**
 
-**Verdict: Switch to B16 (BF16).**
+**Verdict: Use FP16.**
 
-In ROCm 7.1, B32 (Single Precision) was often recommended for APUs because the B16 kernels were untuned and could cause "silent data corruption" (gibberish output) or driver timeouts.
+In ROCm 7.1, FP32 (Single Precision) was often recommended for APUs because the FP16 kernels were untuned and could cause "silent data corruption" (gibberish output) or driver timeouts.
 
-**In ROCm 7.2, you should prioritize B16 (Brain Float 16) or FP16:**
+**In ROCm 7.2, you should use FP16 (Half Precision):**
 
-* **Explicit Tuning:** AMD explicitly focused on **BF16 and FP16 GEMM tuning** in the 7.2 release. The release notes confirm optimized tiling and memory layouts for these precision types.
-* **Throughput:** On Strix Halo, B16 offers nearly **2x the throughput** of B32 in 7.2. The previous instability penalties (crashes/timeouts) have largely been resolved.
-* **Memory Bandwidth:** Since Strix Halo relies on LPDDR5X system memory, B16 effectively doubles your available memory bandwidth compared to B32. Using B32 on these chips will now needlessly bottleneck performance without adding meaningful stability.
+* **Official Validation:** AMD has officially validated **FP16 as the only tested precision type** for consumer GPUs (Strix Halo/Point). Other data types (BF16, FP32, INT8) may work but have not been formally tested.
+* **Throughput:** On Strix Halo, FP16 offers nearly **2x the throughput** of FP32 in 7.2. The previous instability penalties (crashes/timeouts) have largely been resolved.
+* **Memory Bandwidth:** Since Strix Halo relies on LPDDR5X system memory, FP16 effectively doubles your available memory bandwidth compared to FP32. Using FP32 on these chips will now needlessly bottleneck performance without adding meaningful stability.
 
-**Exception:** If you are using **ComfyUI**, some custom nodes are still hardcoded for CUDA assumptions. If you see "grey images" or NaN errors, force `fp32` for that specific node (e.g., VAE Decode), but keep the main model/UNET in `bf16`.
+**Exception:** If you are using **ComfyUI**, some custom nodes are still hardcoded for CUDA assumptions. If you see "grey images" or NaN errors, force `fp32` for that specific node (e.g., VAE Decode), but keep the main model/UNET in `fp16`.
 
 ### **Summary of Recommendations**
 
 1. **Upgrade to 7.2:** The performance uplift and native support make 7.1 obsolete for Strix chips.
 2. **OS Choice:** Stick to **Ubuntu 24.04** (Kernel 6.11) for now; avoid bleeding-edge kernels (6.14+) until the next minor patch.
-3. **Precision:** Default to **BF16**. Only revert to B32 for debugging specific layer failures.
+3. **Precision:** Default to **FP16** (the only officially validated precision for consumer GPUs). Only revert to FP32 for debugging specific layer failures.
 
 
 Based on the research into the **January 2026** ecosystem, the choice between PyTorch 2.9.1 and 2.8 is clear-cut for Strix Halo/Point users.
@@ -65,7 +65,7 @@ Here is the detailed research breakdown:
 
 | Feature | **PyTorch 2.8 (Aug '25)** | **PyTorch 2.9.1 (Nov '25)** | Notes |
 | --- | --- | --- | --- |
-| **GEMM Backend** | Defaults to `rocBLAS` (Legacy) | Defaults to `hipBLASLt` | **Critical:** `hipBLASLt` in 2.9.1 accesses the "Origami" tuning. On Strix Halo, this results in ~35 TFLOPS (BF16) vs ~5 TFLOPS on PyTorch 2.8. |
+| **GEMM Backend** | Defaults to `rocBLAS` (Legacy) | Defaults to `hipBLASLt` | **Critical:** `hipBLASLt` in 2.9.1 accesses the "Origami" tuning. On Strix Halo, this results in ~35 TFLOPS (FP16) vs ~5 TFLOPS on PyTorch 2.8. |
 | **Flash Attention** | Experimental / Broken | **Native Support (v2)** | 2.8 often fails with "supervisor privilege" errors on APUs when accessing Flash Attention. 2.9.1 fixes the memory addressing for unified memory. |
 | **Cold Start** | ~50-60 seconds | **~10-15 seconds** | 2.9.1 includes the caching fix for `torch.compile` on RDNA 3.5. |
 | **vLLM Support** | Requires patches/forks | Mainline Support | 2.9.1 is the required minimum version for the official vLLM 0.7.x release to run on Strix Halo without hanging. |
@@ -108,4 +108,4 @@ In late 2025, Strix users relied on "TheRock" (AMD's nightly fork) to get things
 
 1. **Install PyTorch 2.9.1:** Do not use 2.8. The performance delta is massive due to `hipBLASLt` integration.
 2. **Use `torch.compile`:** PyTorch 2.9.1 is the first release where `torch.compile(mode="reduce-overhead")` is stable on Strix Halo. This significantly reduces CPU-launch latency, which is the main bottleneck for APUs.
-3. **Avoid Quantization Below Int8:** Research suggests PyTorch 2.9.1 still struggles with **Int4** performance on RDNA 3.5 (it often falls back to slow software emulation). Stick to **BF16** or **Int8** for now.
+3. **Avoid Quantization Below Int8:** Research suggests PyTorch 2.9.1 still struggles with **Int4** performance on RDNA 3.5 (it often falls back to slow software emulation). Stick to **FP16** (the only officially validated precision) for now.
