@@ -2,6 +2,8 @@
 
 *Research conducted for porting CUDA devcontainer template to ROCm for consumer AMD GPUs*
 
+> **Last Updated: January 2026** - Now using ROCm 7.2 with PyTorch 2.9.1 and Python 3.12. See [UPDATE: ROCm 7.2 Migration](#update-rocm-72-migration-january-2026) section at the end for all changes since the original ROCm 7.1 notes were written.
+
 ## Project Context
 
 Porting https://github.com/thesteve0/datascience-template-CUDA from NVIDIA CUDA to AMD ROCm for use with:
@@ -1040,3 +1042,216 @@ Option 1 is ~20 lines of bash to generate TOML. Option 3 would have been 100+ li
 - Part 4: Performance comparison vs CUDA on similar-spec hardware
 - Part 5: Multi-IDE setup (VSCode + JetBrains with ROCm)
 - Part 6: The package overwrite problem and how we solved it (this section!)
+
+---
+
+## UPDATE: ROCm 7.2 Migration (January 2026)
+
+**This section documents the major changes since the original notes were written.**
+
+### ROCm 7.2: First Production-Ready Release for Consumer GPUs
+
+ROCm 7.2 is a significant upgrade from ROCm 7.1, representing the first "production-ready" release for Strix Halo (gfx1151) and Strix Point (gfx1150) architectures.
+
+**Key improvements over ROCm 7.1:**
+
+| Feature | ROCm 7.1 | ROCm 7.2 |
+|---------|----------|----------|
+| **Architecture Support** | Required `HSA_OVERRIDE_GFX_VERSION=11.0.0` | Native gfx1151/gfx1150 support |
+| **Python Version** | Python 3.13 | Python 3.12 |
+| **PyTorch Version** | 2.9.0 | 2.9.1 |
+| **Warm-up Times** | ~60s for `torch.compile` cold-start | ~15s (massive improvement) |
+| **GEMM Backend** | Legacy rocBLAS | hipBLASLt with "Origami" tuning |
+| **Precision Validation** | Experimental | FP16 officially validated |
+| **Container Tag** | `rocm7.1_ubuntu24.04_py3.13_pytorch_release_2.9.0` | `rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1` |
+
+**What this means for the template:**
+- Removed `HSA_OVERRIDE_GFX_VERSION` from environment variables (no longer needed)
+- Updated all Python version references from 3.13 to 3.12
+- Added `ROCBLAS_USE_HIPBLASLT=1` environment variable for optimal GEMM performance
+- FP16 is now the recommended (and only validated) precision type
+
+### Virtual Environment Architecture Change
+
+The original notes describe using `/opt/venv` directly with `UV_PROJECT_ENVIRONMENT`. **This approach has been completely redesigned.**
+
+**Old approach (ROCm 7.1 notes):**
+```bash
+# Set UV_PROJECT_ENVIRONMENT=/opt/venv
+# Use override-dependencies with impossible markers
+"torch; sys_platform == 'never'"
+```
+
+**New approach (ROCm 7.2 implementation):**
+```bash
+# Create project .venv from container's Python
+/opt/venv/bin/python -m venv .venv
+
+# Create .pth bridge file to access ROCm packages
+echo "/opt/venv/lib/python3.12/site-packages" > .venv/lib/python3.12/site-packages/_rocm_bridge.pth
+
+# Use exclude-dependencies (cleaner than override-dependencies)
+[tool.uv]
+exclude-dependencies = ["torch", "numpy", "scipy", ...]
+```
+
+**Why the change?**
+
+The `.pth` bridge approach is superior because:
+1. **Stronger protection**: `.pth` makes packages importable but doesn't affect pip's resolution
+2. **Prevents accidental overwrites**: Even `pip install torch` directly won't overwrite ROCm packages
+3. **Better IDE support**: VSCode/JetBrains see `.venv/` in the project directory
+4. **Cleaner separation**: Project packages go to `.venv/`, ROCm packages stay in `/opt/venv`
+
+**CRITICAL: Python Version Matching**
+
+The `.venv` MUST be created with `/opt/venv/bin/python` (not system `python3`) to ensure binary compatibility:
+
+```bash
+# CORRECT: Use container's Python
+/opt/venv/bin/python -m venv .venv
+
+# WRONG: May use different Python version
+python3 -m venv .venv  # Don't do this!
+```
+
+**Why this matters:**
+- ROCm 7.2 uses Python 3.12
+- If `.venv` is created with Python 3.11 or 3.13, numpy/torch imports fail
+- Error message is misleading: "importing numpy from source directory"
+- Real cause: Binary incompatibility (`.so` files compiled for wrong Python version)
+
+The template now automatically:
+1. Detects container Python version
+2. Creates `.venv` with that exact version
+3. Verifies versions match (exits with error if mismatch)
+4. Creates `.pth` bridge dynamically based on detected version
+
+### exclude-dependencies vs override-dependencies
+
+**Old approach (in original notes):**
+```toml
+[tool.uv]
+override-dependencies = [
+    "torch; sys_platform == 'never'",
+    "numpy; sys_platform == 'never'",
+    # ... 137 packages with impossible markers
+]
+```
+
+**New approach (current implementation):**
+```toml
+[tool.uv]
+exclude-dependencies = [
+    "numpy",
+    "scipy",
+    "torch",
+    "torchvision",
+    # ... ~150 package names (no markers needed)
+]
+```
+
+**Why exclude-dependencies is better:**
+- Cleaner syntax (just package names, no markers)
+- More explicit intent ("exclude this" vs "override with impossible condition")
+- Better uv support (exclude-dependencies is the recommended approach)
+- Smaller pyproject.toml (no repeated marker strings)
+
+### JetBrains IDE Support (Fully Implemented)
+
+The template now has complete JetBrains (PyCharm/IntelliJ IDEA) support:
+
+**What's pre-configured:**
+- Shared `devcontainer.json` with `customizations.jetbrains` section
+- `.idea/` directory created by `setup-project.sh`:
+  - `PYTHON_MODULE` type (not `JAVA_MODULE`)
+  - `src/` as Sources Root
+  - `tests/` as Test Sources Root
+  - `.venv/`, `models/`, `datasets/`, `.cache/` as Excluded
+  - Ruff linter/formatter enabled via `.idea/ruff.xml`
+
+**What still requires manual configuration:**
+- Python interpreter selection (JetBrains limitation: [IJPL-174150](https://youtrack.jetbrains.com/issue/IJPL-174150))
+- Steps: File → Project Structure → SDK → Add Python Interpreter → uv type → `/opt/venv/bin/uv`
+
+**Plugin setup:**
+```json
+"jetbrains": {
+  "backend": "IU",
+  "plugins": [
+    "PythonCore",
+    "net.ashald.envfile",
+    "ru.adelf.idea.dotenv",
+    "net.seesharpsoft.intellij.plugins.csv",
+    "nl.bryanderidder.regexrenamefiles",
+    "com.intellij.plugins.watcher",
+    "intellij.python.lsp"
+  ]
+}
+```
+
+### Template Status: Feature-Complete
+
+As of January 2026, the template is feature-complete and ready for release:
+
+**Completed:**
+- [x] Core setup scripts ported and working
+- [x] ROCm 7.2 container integration
+- [x] Python version mismatch detection
+- [x] `.pth` bridge for ROCm package access
+- [x] `exclude-dependencies` protection for ~150 packages
+- [x] VSCode devcontainer configuration
+- [x] JetBrains devcontainer configuration
+- [x] Ruff linter/formatter integration
+- [x] Claude Code CLI integration
+- [x] External data mount (`~/data` → `/data`)
+- [x] Docker and Podman support
+- [x] Comprehensive documentation (README, QUICKSTART, CLAUDE.md)
+
+**Remaining for release:**
+- [ ] End-to-end testing on fresh system
+- [ ] ML workflow validation (training, inference)
+- [ ] Release notes and tagging
+
+### Key Corrections to Original Notes
+
+**1. Python version:** All references to Python 3.13 should be Python 3.12
+
+**2. Container tag:**
+- Old: `rocm7.1_ubuntu24.04_py3.13_pytorch_release_2.9.0`
+- New: `rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1`
+
+**3. UV_PROJECT_ENVIRONMENT:** No longer used - we create `.venv` in project instead
+
+**4. override-dependencies:** Replaced with cleaner `exclude-dependencies`
+
+**5. HSA_OVERRIDE_GFX_VERSION:** Removed - ROCm 7.2 natively supports gfx1151/gfx1150
+
+**6. TheRock builds:** No longer needed - mainline ROCm 7.2 + PyTorch 2.9.1 works
+
+### Lessons Learned from ROCm 7.2 Migration
+
+**1. Container Python versions change between ROCm releases**
+- ROCm 7.1: Python 3.13
+- ROCm 7.2: Python 3.12
+- Template must detect version dynamically, not hardcode
+
+**2. .pth bridge is more robust than UV_PROJECT_ENVIRONMENT**
+- Makes packages importable without package manager involvement
+- Prevents accidental overwrites even with direct pip usage
+- Better IDE integration
+
+**3. Native architecture support matters**
+- Removing `HSA_OVERRIDE_GFX_VERSION` eliminates a common error source
+- Users no longer need to know their GPU architecture code
+- Just works out of the box
+
+**4. FP16 is the safe choice**
+- Only officially validated precision for consumer GPUs
+- FP32 works but wastes memory bandwidth
+- INT4/BF16 may have issues (software fallback, instability)
+
+**5. Documentation must stay current**
+- ROCm ecosystem moves fast
+- Original notes (ROCm 7.1) became outdated within months
+- This update section keeps the narrative accurate

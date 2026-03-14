@@ -4,7 +4,7 @@ Based on the latest data for **January 2026**, ROCm 7.2 represents a significant
 
 Here is the breakdown of the stability status, improvements over 7.1, and precision recommendations.
 
-### **1. Stability Status: Strix Halo & Strix Point**
+/cla### **1. Stability Status: Strix Halo & Strix Point**
 
 ROCm 7.2 is widely considered the **first "production-ready" release** for the Strix Halo (Ryzen AI Max+) and Strix Point (Ryzen AI 300) architectures.
 
