@@ -11,6 +11,9 @@ Porting https://github.com/thesteve0/datascience-template-CUDA from NVIDIA CUDA 
 - Custom Steam Deck with Ryzen chips
 - Consumer AMD GPUs in general
 
+One the big differences is that while each company uses the same linux distribution, they do Python packaging and tooling completely differently. This leads
+to needing 2 different devcontainer respositories and not being able to completely reuse lessons learned. 
+
 ## The Container Image Research Journey
 
 ### Starting Point: Finding Official AMD ROCm Containers
@@ -60,12 +63,13 @@ Next investigated the new training framework:
 Finally looked at the general PyTorch image:
 - **Docs**: https://rocm.docs.amd.com/en/latest/how-to/rocm-for-ai/inference/benchmark-docker/pytorch-inference.html
 - **Purpose**: General-purpose PyTorch environment (inference-focused in docs)
-- **Current Version**: ROCm 7.1.0 available
+- **Current Version**: ROCm 7.2.0 available
 - **Key Features**:
   - Float8 support
   - FlashAttention v3 integration
   - Quarterly releases alongside ROCm updates
-- **Target Hardware**: AMD Instinct MI300X Series (per documentation)
+
+  Prefered format for weights and calculations is f16
 
 ### The Documentation Problem
 
@@ -90,29 +94,7 @@ Despite the documentation saying these containers are for MI300X data center GPU
 
 **This is the gap between documentation and reality** - the images work fine on consumer hardware, but the docs don't make this clear.
 
-### Community Solutions Exploration
 
-While researching, I also found several **community-built** Docker images specifically targeting consumer AMD GPUs:
-
-1. **scottt/TheRock** - `docker.io/scottt/therock:pytorch-vision-dev-f41`
-   - Bleeding-edge ROCm builds
-   - Explicitly supports gfx1151 (Strix Halo)
-   - Community discussion: https://github.com/ROCm/TheRock/discussions/244
-
-2. **weiziqian/rocm_pytorch_docker_gfx1151**
-   - GitHub: https://github.com/weiziqian/rocm_pytorch_docker_gfx1151
-   - Ubuntu 24.04 + ROCm 7.0 + PyTorch 2.7.1
-   - Built specifically for Strix Halo
-
-3. **kyuz0/amd-strix-halo-vllm-toolboxes**
-   - GitHub: https://github.com/kyuz0/amd-strix-halo-vllm-toolboxes
-   - Focused on vLLM serving
-
-4. **gdkrmr/ollama-rocm-docker-gfx1151**
-   - GitHub: https://github.com/gdkrmr/ollama-rocm-docker-gfx1151
-   - Ollama support for Strix Halo
-
-These exist because the official images don't explicitly mention gfx1151 support, so the community filled the gap.
 
 ### The Decision: rocm/pytorch
 
@@ -129,7 +111,6 @@ These exist because the official images don't explicitly mention gfx1151 support
 **Why NOT the others**:
 - `rocm/pytorch-training`: Being deprecated, unclear future
 - `rocm/primus`: Designed for data center multi-node training, excessive complexity
-- Community images: Prefer official for long-term support, but they exist as fallback
 
 ## Key Insights for Blog Post
 
@@ -140,10 +121,8 @@ AMD's ROCm documentation is split between data center (MI300X) and consumer (Rad
 The main ROCm container docs focus on data center GPUs, but `rocm/pytorch` works fine on consumer hardware. Don't let the documentation scare you away from trying it on your Ryzen APU or Radeon GPU.
 
 ### 3. gfx1151 Support Status
-Strix Halo (gfx1151) is officially supported in ROCm 7.1 preview, but:
-- Official containers don't explicitly mention it
+Strix Halo (gfx1151) and Strix Point are officially supported in ROCm 7.2  but:
 - Some features have limitations (hipBLASLt, AOTriton)
-- Community has created workarounds and custom builds
 - Real-world testing shows it works better than docs suggest
 
 ### 4. Consumer GPU vs Data Center Focus
@@ -216,8 +195,6 @@ ROCm containers come with pre-installed optimized libraries. Installing conflict
 ## Quotes to Consider
 
 *"The rocm/pytorch-training Docker Hub registry will be deprecated soon in favor of rocm/primus"* - Shows ecosystem evolution
-
-*"ROCm 7.1 is a preview release featuring updates for Radeon and Ryzen on Linux usecases"* - Consumer GPU support is coming but still maturing
 
 *"While AMD's official documentation focuses on data center GPUs (MI300X series), the rocm/pytorch image has been verified to work on consumer hardware"* - My key insight
 
