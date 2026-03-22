@@ -2,10 +2,12 @@
 
 This file tracks the roadmap for porting the CUDA data science template to ROCm with improvements.
 
+- [ ] The new CLAUDE.md should explicitly state that we only use uv for project dependencies. When using Claude in the new project it should never suggest 'pip install...', it should always be 'uv add'. Same for all the pip commands. 
+
 There are a couple of things we need to handle right away
-- [ ] How to take the code and then run it on NVIDIA accelerators. AMD and NVIDIA PyTorch both look to see if 'cuda' is present so the code should just work, but we need to test that. This is similar to the instructions we needed to write on how to take this code to production. 
-- [ ] How to back up your devcontainer environment. Before tasks that need a rebuild of the container, how do I back up the existing container so I can just roll back if the rebuild is broken
-- [ ] How to snapshot the current state of the devcontainer and share it with other users on AMD accelerators
+- [x] How to take the code and then run it on NVIDIA accelerators. AMD and NVIDIA PyTorch both look to see if 'cuda' is present so the code should just work, but we need to test that. This is similar to the instructions we needed to write on how to take this code to production. → See NVIDIA-TRAINING-PRODUCTION.md
+- [x] How to back up your devcontainer environment. Before tasks that need a rebuild of the container, how do I back up the existing container so I can just roll back if the rebuild is broken → See DEVCONTAINER-SNAPSHOT.md
+- [x] How to snapshot the current state of the devcontainer and share it with other users on AMD accelerators → See DEVCONTAINER-SNAPSHOT.md
 
 ### Documentation Improvements
 - [ ] Write comprehensive README.md
@@ -16,16 +18,7 @@ There are a couple of things we need to handle right away
 - [ ] Add example workflows
   - [ ] Fine-tuning example
   - [ ] Inference example
-  - [ ] Multi-GPU example (future)
-- [ ] Document differences from CUDA template
-- [ ] Add ROCm-specific gotchas and tips
-
-### User Experience Improvements
-- [ ] Better setup script error handling
-- [ ] Automated GPU capability detection
-- [ ] Health check scripts
-- [ ] Performance tuning guidelines
-
+  - [ ] Multi1
 ## Phase 4: Testing & Validation
 
 ### Basic Functionality Tests
