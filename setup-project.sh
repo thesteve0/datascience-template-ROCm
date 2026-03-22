@@ -525,6 +525,21 @@ src/
 
 ## Development Workflow
 
+**IMPORTANT — Package Management**: This project uses `uv` exclusively. Never use `pip install`
+directly. Always use `uv` commands:
+
+```bash
+uv add <package>            # Add a runtime dependency (updates pyproject.toml + uv.lock)
+uv add --dev <package>      # Add a dev-only dependency
+uv remove <package>         # Remove a dependency
+uv sync                     # Install/update all dependencies from uv.lock
+uv pip install <package>    # One-off install without adding to pyproject.toml (rare)
+```
+
+ROCm packages (torch, numpy, etc.) are provided by `/opt/venv` via the `.pth` bridge and are
+excluded from `uv` installs automatically. Do not `uv add torch` or similar — they are already
+available.
+
 **Common commands**:
 ```bash
 # Training
