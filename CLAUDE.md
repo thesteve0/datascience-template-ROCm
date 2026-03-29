@@ -2,6 +2,17 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Rules for Claude Code
+
+### venv and .pth Logic
+
+Never modify the venv creation or `.pth` bridge logic in `setup-environment.sh` as a first or early solution. This code is carefully engineered to prevent Python version binary incompatibility and protect ROCm packages from being overwritten. Changing it risks subtle, hard-to-diagnose failures.
+
+When debugging Python interpreter or package issues:
+1. First look for config-level fixes (devcontainer.json settings, environment variables, IDE settings)
+2. Try other approaches that don't touch setup-environment.sh
+3. Only propose venv/.pth changes as a last resort, AND explicitly ask for user approval before making any such edit
+
 ## Project Overview
 
 This is a ROCm-based data science devcontainer template, ported from the CUDA version at https://github.com/thesteve0/datascience-template-CUDA. It provides development container configurations optimized for machine learning and data science work on AMD GPUs using ROCm.

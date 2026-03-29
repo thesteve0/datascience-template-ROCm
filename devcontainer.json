@@ -19,7 +19,7 @@
     "--device=/dev/kfd",
     "--device=/dev/dri",
     "--group-add=video",
-    "--group-add=105",
+    "--group-add=render",
     "--ipc=host",
     "--shm-size=8G",
     "--cap-add=SYS_PTRACE",
@@ -57,7 +57,7 @@
   "customizations": {
     "vscode": {
       "settings": {
-        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python",
+        "python.defaultInterpreterPath": "/opt/venv/bin/python",
         "python.terminal.activateEnvironment": true,
         "files.watcherExclude": {
           "**/.cache/**": true,
