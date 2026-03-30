@@ -9,26 +9,14 @@ echo "Setting up {{PROJECT_NAME}} ROCm PyTorch ML environment..."
 # This is simpler than the CUDA template's group-sharing approach.
 
 WORKSPACE_DIR="/workspaces/{{PROJECT_NAME}}"
-
-# Fix ownership of AMD's pre-configured venv
-# The base container has a venv at /opt/venv owned by root. We need to make it
-# writable by the devcontainer user so they can install packages without sudo.
-#
-# SECURITY NOTE: This devcontainer is designed for DEVELOPMENT ONLY.
-# The user has passwordless sudo access (standard for devcontainers) for convenience.
-# DO NOT use this configuration for production deployments - production containers should:
-#   - Run as non-root user without sudo access
-#   - Have read-only filesystems where possible
-#   - Follow principle of least privilege
-echo "Configuring Python virtual environment permissions..."
-sudo chown -R $(whoami):$(whoami) /opt/venv
+PYTHON_VERSION=$(/opt/venv/bin/python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
 
 # Generate rocm-provided.txt
 echo "Extracting ROCm-provided packages..."
 if [ -f /etc/pip/constraint.txt ]; then
     grep -E "==" /etc/pip/constraint.txt | sort > ${WORKSPACE_DIR}/rocm-provided.txt
 else
-    uv pip freeze > ${WORKSPACE_DIR}/rocm-provided.txt
+    sudo /opt/venv/bin/uv pip freeze --python /opt/venv/bin/python > ${WORKSPACE_DIR}/rocm-provided.txt
 fi
 
 # Update system packages
@@ -44,12 +32,10 @@ sudo apt-get install -y --no-upgrade \
     git curl wget build-essential \
     && sudo rm -rf /var/lib/apt/lists/*
 
-# Install development tools
-# Note: AMD's ROCm container already includes uv package manager and uses a
-# pre-configured venv at /opt/venv. After fixing venv ownership above,
-# pip/uv install works without sudo.
+# Install development tools into /opt/venv via sudo (avoids slow recursive chown).
+# /opt/venv stays root-owned; users add packages via `uv add` into .venv, never directly here.
 # Ruff replaces black (formatter) + flake8 (linter) with a single fast tool
-uv pip install --no-cache-dir ruff pre-commit
+sudo /opt/venv/bin/uv pip install --python /opt/venv/bin/python --no-cache-dir ruff pre-commit
 
 # Initialize uv project for standalone mode
 # The .standalone-project marker is created by setup-project.sh for new projects
@@ -64,7 +50,7 @@ if [ -f "${WORKSPACE_DIR}/.standalone-project" ]; then
     # Create venv from /opt/venv's Python for version consistency
     if [ ! -d ".venv" ]; then
         echo "Creating project virtual environment with Python $CONTAINER_PYTHON_VERSION..."
-        /opt/venv/bin/python -m venv .venv
+        /opt/venv/bin/uv venv --python /opt/venv/bin/python .venv
 
         # CRITICAL: Verify the venv uses the same Python version
         VENV_PYTHON_VERSION=$(.venv/bin/python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
@@ -101,54 +87,30 @@ if [ -f "${WORKSPACE_DIR}/.standalone-project" ]; then
 
     # CRITICAL: Generate exclusion list BEFORE any uv add/sync commands
     # This prevents uv from installing PyTorch/numpy/etc from PyPI
-    # We use pip to install tomli/tomli-w to avoid triggering a uv sync
-    echo "Installing TOML tools (via pip to avoid premature sync)..."
-    .venv/bin/pip install --quiet tomli tomli-w
-
+    # Uses only Python stdlib (tomllib for reading, string append for writing)
+    # so no external packages are needed for the bootstrap step
     echo "Generating ROCm package exclusion list..."
     .venv/bin/python << PYEOF
-import json
 from pathlib import Path
-import tomli
-import tomli_w
 
 site_packages = Path('/opt/venv/lib/python${CONTAINER_PYTHON_VERSION}/site-packages')
-packages = {d.name.split('-')[0].replace('_', '-').lower()
-            for d in site_packages.glob('*.dist-info')}
+packages = sorted({d.name.split('-')[0].replace('_', '-').lower()
+                   for d in site_packages.glob('*.dist-info')})
 
-# Read existing pyproject.toml and add exclude-dependencies
-with open('pyproject.toml', 'rb') as f:
-    config = tomli.load(f)
-
-if 'tool' not in config:
-    config['tool'] = {}
-if 'uv' not in config['tool']:
-    config['tool']['uv'] = {}
-
-config['tool']['uv']['exclude-dependencies'] = sorted(packages)
-
-# Ensure tomli, tomli-w, and ruff are in dependencies if not already
-deps = config.get('project', {}).get('dependencies', [])
-dep_names = [d.split('>=')[0].split('==')[0].lower() for d in deps]
-if 'tomli' not in dep_names:
-    deps.append('tomli>=2.0.0')
-if 'tomli-w' not in dep_names:
-    deps.append('tomli-w>=1.0.0')
-if 'ruff' not in dep_names:
-    deps.append('ruff>=0.4.0')
-if 'project' not in config:
-    config['project'] = {}
-config['project']['dependencies'] = deps
-
-with open('pyproject.toml', 'wb') as f:
-    tomli_w.dump(config, f)
+# Append [tool.uv] exclusion list to pyproject.toml
+# Safe because uv init creates a fresh file without a [tool] section
+with open('pyproject.toml', 'a') as f:
+    f.write('\n[tool.uv]\nexclude-dependencies = [\n')
+    for pkg in packages:
+        f.write(f'    "{pkg}",\n')
+    f.write(']\n')
 
 print(f"✓ Protected {len(packages)} ROCm packages from overwrite")
 PYEOF
 
-    # Now safe to run uv sync - exclusion list is in place
-    echo "Syncing project dependencies..."
-    uv sync
+    # Now safe to use uv add - exclusion list is in place
+    echo "Adding project dependencies..."
+    uv add tomli tomli-w ruff
 
     # Verify ROCm packages accessible
     echo "Verifying ROCm package access..."
