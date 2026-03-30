@@ -299,13 +299,11 @@ python -c "import torch; print(f'GPU available: {torch.cuda.is_available()}'); p
 
 ## Claude Code Integration
 
-### Claude Code Feature
+### Claude Code Installation
 
-The devcontainer includes the Claude Code feature (`ghcr.io/anthropics/devcontainer-features/claude-code:1`), which provides:
+Claude Code is installed via the native installer (`curl -fsSL https://claude.ai/install.sh | bash`) in `setup-environment.sh`, not via a devcontainer feature. This avoids a Node.js dependency and uses the recommended installation method.
 
-- Claude Code CLI available inside the devcontainer
-- Google Cloud credentials mounted from host for Vertex AI authentication
-- Environment variables passed from host to container
+The binary is installed to `~/.local/bin/claude`. Google Cloud credentials are mounted from the host for Vertex AI authentication, and environment variables are passed from host to container via `containerEnv`.
 
 ### Required Configuration
 

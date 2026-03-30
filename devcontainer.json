@@ -11,8 +11,7 @@
       "uid": "{{DEV_UID}}",
       "gid": "{{DEV_UID}}",
       "upgradePackages": false
-    },
-    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
+    }
   },
 
   "runArgs": [

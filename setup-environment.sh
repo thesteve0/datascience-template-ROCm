@@ -32,6 +32,11 @@ sudo apt-get install -y --no-upgrade \
     git curl wget build-essential \
     && sudo rm -rf /var/lib/apt/lists/*
 
+# Install Claude Code using native installer (no Node.js dependency)
+echo "Installing Claude Code..."
+curl -fsSL https://claude.ai/install.sh | bash
+echo "✓ Claude Code installed"
+
 # Install development tools into /opt/venv via sudo (avoids slow recursive chown).
 # /opt/venv stays root-owned; users add packages via `uv add` into .venv, never directly here.
 # Ruff replaces black (formatter) + flake8 (linter) with a single fast tool
