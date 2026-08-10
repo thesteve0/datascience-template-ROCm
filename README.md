@@ -101,19 +101,340 @@ python test-gpu.py      # Full benchmark (2-3 min)
 uv add transformers datasets
 ```
 
-### Wrapping an Existing Repository
-
-If you have an existing ML project and want to add ROCm GPU support:
+### Option B: Add ROCm DevContainer to an Existing Repository
 
 ```bash
-# 1. Download and extract the template, name it as your project wrapper
-cd my-project-wrapper
+# 1. Download or clone this template
+cd datascience-template-ROCm
 
-# 2. Setup with your existing repo
-./setup-project.sh --clone-repo https://github.com/username/existing-ml-project.git
+# 2. Run the existing-project setup script (repo is cloned as a sibling directory)
+./setup-project-existing.sh --repo git@github.com:username/my-ml-project.git --ide jetbrains
 
-# 3. Open in IDE -> Reopen in container
-# Your repo is available at ./existing-ml-project/ inside the container
+# 3. Open the newly prepared directory in your IDE
+cd ../my-ml-project
+code .    # or open with JetBrains Gateway
+
+# 4. Reopen in Container — setup-environment-existing.sh runs automatically and:
+#      - Creates .venv (Python version-matched to the ROCm container)
+#      - Bridges ROCm packages (torch, numpy, etc.) into .venv via .pth file
+#      - Adds ROCm package exclusions to your existing pyproject.toml
+#      - Runs uv sync to install your project's dependencies
+```
+
+See [Using with an Existing Repository](#using-with-an-existing-repository) in the Usage Guide for details on what happens automatically and how to handle edge cases.
+
+## Usage Guide
+
+### Project Structure
+
+After running `setup-project.sh`, your project will have:
+
+```
+my-ml-project/
+├── .devcontainer/
+│   ├── devcontainer.json       # VSCode devcontainer config
+│   └── setup-environment.sh    # Post-creation setup script
+├── scripts/
+│   └── resolve-dependencies.py # Dependency conflict resolver
+├── src/
+│   └── my-ml-project/          # Your source code
+├── tests/                      # Test files
+├── configs/                    # Configuration files
+├── models/                     # Persistent volume mount
+├── datasets/                   # Persistent volume mount
+├── .cache/                     # Persistent volume mount
+├── hello-gpu.py                # Quick GPU sanity check
+├── test-gpu.py                 # Comprehensive GPU benchmark
+├── setup-project.sh            # Project setup script
+└── cleanup-script.sh           # Cleanup utility
+```
+
+### Managing Dependencies
+
+#### Understanding the Python Environment
+
+When you open the devcontainer, you're working inside a pre-configured environment:
+
+| Component | Location | Notes |
+|-----------|----------|-------|
+| **Virtual Environment** | `.venv/` (in project root) | Created by setup script, version-matched to container |
+| **Python Interpreter** | `.venv/bin/python` | Python 3.12 with ROCm-optimized PyTorch |
+| **Package Manager** | `uv` | Fast, modern Python package manager |
+| **ROCm PyTorch** | Accessible via `.pth` bridge | DO NOT reinstall from PyPI — it would replace the ROCm build |
+
+The setup script (either `setup-environment.sh` for new projects or `setup-environment-existing.sh` for existing repos) automatically:
+1. Creates `.venv/` using `/opt/venv/bin/python` (version-matched to avoid binary incompatibility)
+2. Creates a `.pth` bridge so ROCm packages (torch, numpy, etc.) are importable from `.venv`
+3. Generates `rocm-provided.txt` listing all protected packages
+4. Configures `pyproject.toml` with `[tool.uv] exclude-dependencies` to prevent PyPI from overwriting ROCm packages
+
+#### Adding New Packages (Recommended: uv)
+
+The modern workflow uses `uv` with `pyproject.toml`:
+
+```bash
+# 1. Add packages to pyproject.toml dependencies section
+#    Edit pyproject.toml and add to the dependencies list:
+#    dependencies = [
+#        "transformers",
+#        "docling",
+#    ]
+
+# 2. Install with uv sync
+uv sync
+```
+
+The `pyproject.toml` contains a `[tool.uv] exclude-dependencies` section that lists all ROCm-provided packages. When you add a package like `transformers` that depends on `torch`, uv sees `torch` in the exclude list and **skips installing it** - preserving your working ROCm PyTorch.
+
+**Quick add (single package):**
+```bash
+uv add transformers
+```
+
+**Verify PyTorch is still the ROCm version after installing:**
+```bash
+python -c "import torch; print(torch.__version__)"
+# Should show: 2.9.1+rocm7.2... (the +rocm suffix is key)
+```
+
+#### Alternative: requirements.txt Workflow
+
+For projects using `requirements.txt`, use the `resolve-dependencies.py` script:
+
+```bash
+# 1. Add packages to requirements.txt
+cat > requirements.txt << EOF
+transformers>=4.30.0
+diffusers>=0.21.0
+accelerate>=0.24.0
+datasets>=2.14.0
+EOF
+
+# 2. Filter out ROCm-provided packages
+python scripts/resolve-dependencies.py requirements.txt
+
+# 3. Install filtered dependencies
+uv pip install -r requirements-filtered.txt
+```
+
+The script will:
+- Create `requirements-original.txt` (backup)
+- Create `requirements-filtered.txt` (safe to install)
+- Comment out packages already provided by ROCm
+- Show which packages were skipped
+
+#### Why Package Protection Matters
+
+PyPI only hosts CUDA-built PyTorch wheels. If you run `pip install transformers` without protection, pip will see that transformers needs torch and install the CUDA version from PyPI - **breaking your ROCm GPU support**.
+
+The `exclude-dependencies` list in `pyproject.toml` (or the `resolve-dependencies.py` script) prevents this by telling uv/pip to never install these packages as dependencies.
+
+### Using with an Existing Repository
+
+Use `setup-project-existing.sh` when you have an existing git repository (with its own `pyproject.toml`, source code, and history) and want to add ROCm devcontainer infrastructure to it. Your repository becomes the devcontainer workspace root — not a subdirectory.
+
+#### What the scripts do
+
+**`setup-project-existing.sh` (runs on host before opening the container):**
+1. Clones your repository as a sibling directory next to the template
+2. Copies devcontainer infrastructure into it (`.devcontainer/`, `scripts/`, `test-gpu.py`, `cleanup-script.sh`)
+3. Replaces all `{{PLACEHOLDER}}` variables with your project name, git identity, and user info
+4. Creates `models/`, `datasets/`, `.cache/` directories and updates `.gitignore`
+5. Sets up `.idea/` with Python module configuration if JetBrains is selected
+
+**`setup-environment-existing.sh` (runs inside the container automatically on first start):**
+1. Fixes `/opt/venv` ownership
+2. Generates `rocm-provided.txt` listing all ROCm-provided packages
+3. Creates `.venv` using `/opt/venv/bin/python` (version-matched to avoid binary incompatibility)
+4. Creates the `.pth` bridge so ROCm packages (torch, numpy, etc.) are importable from `.venv`
+5. Adds `[tool.uv] exclude-dependencies` to your `pyproject.toml` (skipped if already present)
+6. Runs `uv sync` to install your dependencies
+
+#### The hatchling edge case
+
+If your `pyproject.toml` uses hatchling as the build backend but doesn't have `[tool.hatch.build.targets.wheel]` configured, `uv sync` would normally fail with:
+
+```
+ValueError: Unable to determine which files to ship inside the wheel
+The most likely cause of this is that there is no directory that matches the name of your project
+```
+
+`setup-environment-existing.sh` detects this automatically and uses `uv sync --no-install-project` instead. Your dependencies are installed, but the project itself is not installed as an editable package.
+
+**To enable editable install**, add to your `pyproject.toml` and then run `uv sync`:
+```toml
+[tool.hatch.build.targets.wheel]
+packages = ["src/your_package_name"]  # adjust to match your actual source directory
+```
+
+#### PYTHONPATH
+
+The `devcontainer-existing.json` sets `PYTHONPATH` to the workspace root (`/workspaces/PROJECT_NAME`) rather than `/src`, since existing projects have varied source layouts. If your project follows a `src/` layout, update this in `.devcontainer/devcontainer.json` after setup:
+
+```json
+"PYTHONPATH": "/workspaces/your-project-name/src"
+```
+
+#### Re-running setup
+
+`setup-environment-existing.sh` is safe to re-run — it skips steps that are already complete (existing `.venv`, existing `exclude-dependencies` configuration). To force a clean setup:
+
+```bash
+rm -rf .venv
+uv sync  # or uv sync --no-install-project
+```
+
+### Troubleshooting
+
+#### ImportError: "importing numpy from source directory"
+
+If you see this error when running code with Ctrl+F5 in VSCode:
+
+```
+ImportError: Error importing numpy: you should not try to import numpy from
+        its source directory; please exit the numpy source tree, and relaunch
+        your python interpreter from there.
+```
+
+**Cause**: Your `.venv` was created with a different Python version than the container's `/opt/venv`. This causes binary incompatibility with compiled C extensions (numpy, torch, etc.). The misleading error message actually means the Python versions don't match.
+
+**Diagnostic:**
+```bash
+# Check Python versions - they MUST match
+/opt/venv/bin/python --version    # Container Python (e.g., 3.12.x)
+.venv/bin/python --version         # Project venv (should also be 3.12.x)
+
+# Check if .pth bridge points to correct Python version
+find .venv -name "_rocm_bridge.pth" -exec cat {} \;
+# Should show path matching your Python version (e.g., /opt/venv/lib/python3.12/site-packages)
+```
+
+**Fix:**
+```bash
+# Recreate venv with correct Python version
+rm -rf .venv
+/opt/venv/bin/python -m venv .venv
+
+# Recreate .pth bridge (the script detects the Python version automatically)
+PYTHON_VERSION=$(/opt/venv/bin/python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+echo "/opt/venv/lib/python${PYTHON_VERSION}/site-packages" > .venv/lib/python${PYTHON_VERSION}/site-packages/_rocm_bridge.pth
+
+# Reinstall dependencies
+uv sync
+```
+
+**Prevention**: The template now automatically detects and prevents Python version mismatches during setup. If you created your project from an older version of the template, consider recreating it or manually applying the fix above.
+
+### Testing GPU Acceleration
+
+Two test scripts are included:
+
+**Quick sanity check (30 seconds):**
+```bash
+python hello-gpu.py
+```
+
+**Comprehensive benchmark (2-3 minutes):**
+```bash
+python test-gpu.py
+```
+
+**What it tests:**
+- ✅ GPU availability and device information
+- ✅ Basic tensor operations on GPU
+- ✅ CPU vs GPU performance comparison (matrix multiplication)
+- ✅ Small neural network training (235K params) - shows overhead on integrated GPUs
+- ✅ Large neural network training (7.3M params, batch 512) - shows GPU benefits
+
+**Sample output (AMD Radeon 8060S / Strix Halo):**
+```
+======================================================================
+  GPU Availability Check
+======================================================================
+PyTorch version: 2.9.1+rocm7.2
+GPU available: True
+
+✅ GPU Count: 1
+
+GPU 0:
+  Name: AMD Radeon 8060S
+  Total Memory: 96.00 GB
+
+======================================================================
+  CPU vs GPU Performance Comparison
+======================================================================
+Matrix size: 4096x4096
+Iterations: 10
+
+📊 Performance Summary:
+   CPU: 0.1784 seconds
+   GPU: 0.2831 seconds
+   Speedup: 0.63x faster on GPU
+
+⚠️  WARNING: GPU is slower than CPU!
+   This may indicate a configuration issue.
+
+======================================================================
+  Small Neural Network Training Comparison
+======================================================================
+
+📊 Small Model Training Performance:
+   CPU: 0.0194 seconds
+   GPU: 0.1155 seconds
+   Speedup: 0.17x faster on GPU
+
+⚠️  GPU slower for small model (expected on integrated GPUs).
+   Small workloads have GPU overhead > actual compute.
+
+======================================================================
+  Large Neural Network Training Comparison
+======================================================================
+
+📊 Large Model Training Performance:
+   Model: 7.3M parameters, batch size 512, 50 iterations
+   CPU: 2.4567 seconds
+   GPU: 0.8234 seconds
+   Speedup: 2.98x faster on GPU
+
+✅ Excellent GPU acceleration! 2.98x speedup for realistic workloads.
+```
+
+**Understanding the Results:**
+
+The test suite includes both **small** and **large** workloads to show the full picture:
+
+**Small Model Test (235K params, batch 128):**
+- ⚠️ **CPU faster** - GPU overhead dominates for tiny models
+- ✅ **GPU works correctly** - This proves GPU operations function
+- 💡 **Expected behavior** - Integrated GPUs need larger workloads
+
+**Large Model Test (7.3M params, batch 512):**
+- ✅ **GPU faster (2-4x speedup)** - Enough compute to overcome overhead
+- ✅ **Realistic workload** - Closer to actual ML model sizes
+- 🎯 **Shows GPU benefit** - This is why you have a GPU!
+
+**Why workload size matters:**
+1. **GPU overhead is fixed** (~50-100ms for kernel launch, memory setup)
+2. **Small model**: Overhead > compute time → CPU wins
+3. **Large model**: Compute time >> overhead → GPU wins
+4. **Real ML models** (transformers, ResNets) are even larger → GPU wins big
+
+**When GPU acceleration helps on integrated GPUs:**
+- Models with 5M+ parameters (most modern ML models)
+- Batch sizes 256+ samples
+- Large images 512x512+ resolution
+- Long training runs (hours/days)
+- Inference on large models (LLMs, diffusion)
+
+The test validates your ROCm setup is working correctly and shows GPU benefits appear at realistic model sizes.
+
+**Quick verification:**
+```bash
+# Check GPU is visible (amd-smi preferred, rocm-smi still works)
+amd-smi
+
+# Quick PyTorch GPU test
+python hello-gpu.py
 ```
 
 ### IDE Selection

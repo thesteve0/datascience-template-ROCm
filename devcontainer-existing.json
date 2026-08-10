@@ -1,0 +1,112 @@
+{
+  "name": "{{PROJECT_NAME}} ROCm PyTorch ML Development",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "username": "{{DEV_USER}}",
+      "uid": "{{DEV_UID}}",
+      "gid": "{{DEV_UID}}",
+      "upgradePackages": false
+    },
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
+  },
+
+  "runArgs": [
+    "--device=/dev/kfd",
+    "--device=/dev/dri",
+    "--group-add=video",
+    "--group-add=105",
+    "--ipc=host",
+    "--shm-size=8G",
+    "--cap-add=SYS_PTRACE",
+    "--security-opt=seccomp=unconfined",
+    "--memory=20g",
+    "--cpus=8",
+    "--ulimit=memlock=-1",
+    "--ulimit=stack=67108864",
+    "--mount", "type=bind,source=${env:SSH_AUTH_SOCK},target=/tmp/ssh-agent.sock",
+    "--mount", "type=bind,source=${localEnv:HOME}/.config/gcloud,target=/home/{{DEV_USER}}/.config/gcloud,readonly",
+    "--mount", "type=bind,source=${localEnv:HOME}/data,target=/data"
+  ],
+
+  "containerEnv": {
+    "HIP_VISIBLE_DEVICES": "0",
+    "ROCM_HOME": "/opt/rocm",
+    "ROCBLAS_USE_HIPBLASLT": "1",
+    // PYTHONPATH points to the workspace root because existing projects have varied source layouts.
+    // If your source is under src/, you may want to change this to:
+    //   /workspaces/{{PROJECT_NAME}}/src
+    "PYTHONPATH": "/workspaces/{{PROJECT_NAME}}",
+    "HF_HOME": "/workspaces/{{PROJECT_NAME}}/.cache/huggingface",
+    "TORCH_HOME": "/workspaces/{{PROJECT_NAME}}/.cache/torch",
+    "TRANSFORMERS_CACHE": "/workspaces/{{PROJECT_NAME}}/.cache/huggingface/transformers",
+    "SSH_AUTH_SOCK": "/tmp/ssh-agent.sock",
+    "VIRTUAL_ENV": "${containerWorkspaceFolder}/.venv",
+    "ANTHROPIC_VERTEX_PROJECT_ID": "${localEnv:ANTHROPIC_VERTEX_PROJECT_ID}",
+    "ANTHROPIC_VERTEX_REGION": "${localEnv:ANTHROPIC_VERTEX_REGION}",
+    "CLAUDE_CODE_USE_VERTEX": "${localEnv:CLAUDE_CODE_USE_VERTEX}"
+  },
+
+  // No volume mounts needed — VSCode bind-mounts the entire workspace folder by default.
+  // models/, datasets/, .cache/ are regular project directories visible from both host and container.
+
+  "workspaceFolder": "/workspaces/{{PROJECT_NAME}}",
+  "remoteUser": "{{DEV_USER}}",
+
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python",
+        "python.terminal.activateEnvironment": true,
+        "files.watcherExclude": {
+          "**/.cache/**": true,
+          "**/models/**": true,
+          "**/datasets/**": true
+        },
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "editor.formatOnSave": true,
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff",
+          "editor.codeActionsOnSave": {
+            "source.fixAll": "explicit",
+            "source.organizeImports": "explicit"
+          }
+        },
+        "ruff.enable": true,
+        "ruff.organizeImports": true
+      },
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "github.copilot",
+        "ms-toolsai.jupyter"
+      ]
+    },
+    "jetbrains": {
+      "backend": "IU",
+      "plugins": [
+        "PythonCore",
+        "net.ashald.envfile",
+        "ru.adelf.idea.dotenv",
+        "net.seesharpsoft.intellij.plugins.csv",
+        "nl.bryanderidder.regexrenamefiles",
+        "com.intellij.plugins.watcher",
+        "intellij.python.lsp"
+      ]
+    }
+  },
+
+  "forwardPorts": [6006, 8888],
+
+  "postCreateCommand": ".devcontainer/setup-environment-existing.sh",
+
+  "hostRequirements": {
+    "gpu": "optional",
+    "memory": "24gb"
+  }
+}

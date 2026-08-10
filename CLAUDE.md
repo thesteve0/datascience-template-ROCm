@@ -203,22 +203,37 @@ This is a ROCm-based data science devcontainer template, ported from the CUDA ve
 Template files in the repository root (before `setup-project.sh` runs):
 ```
 datascience-template-ROCm/
-├── devcontainer.json          # Template for VSCode devcontainer
-├── Dockerfile                 # Container image definition
-├── setup-project.sh           # Initial project setup script (runs on host)
-├── setup-environment.sh       # Post-creation environment configuration (runs in container)
-├── resolve-dependencies.py    # Filters dependencies to avoid package conflicts
-├── cleanup-script.sh          # Clean up Docker resources
-├── CLAUDE.md                  # This file
-├── TODO.md                    # Project roadmap and task tracking
+├── devcontainer.json               # Template for new-project devcontainer (VSCode/JetBrains)
+├── devcontainer-existing.json      # Template for existing-repo devcontainer
+├── setup-project.sh                # New project setup script (run on host)
+├── setup-project-existing.sh       # Existing repo setup script (run on host)
+├── setup-environment.sh            # New project post-creation script (run in container)
+├── setup-environment-existing.sh   # Existing repo post-creation script (run in container)
+├── resolve-dependencies.py         # Filters requirements.txt to avoid package conflicts
+├── cleanup-script.sh               # Clean up Docker resources
+├── CLAUDE.md                       # This file
+├── TODO.md                         # Project roadmap and task tracking
 └── README.md
 ```
 
-After `setup-project.sh` runs, files are reorganized:
-- `devcontainer.json`, `Dockerfile`, `setup-environment.sh` move to `.devcontainer/`
-- `resolve-dependencies.py` moves to `scripts/`
-- `CLAUDE.md` and `README.md` move to `template_docs/` (new skeleton versions created for user)
-- `.standalone-project` marker created (triggers Phase 2 in setup-environment.sh)
+### Two Setup Modes
+
+The template supports two fundamentally different use cases, each with its own pair of scripts:
+
+**Mode 1: New project (blank slate)**
+- Run `setup-project.sh` from the template directory
+- Creates a new project directory with full structure (`src/`, `tests/`, `configs/`, etc.)
+- `setup-environment.sh` runs in the container: creates venv, .pth bridge, initializes `pyproject.toml` from scratch, adds ROCm exclusions, runs `uv sync`
+- Marker file: `.standalone-project`
+
+**Mode 2: Existing repository**
+- Run `setup-project-existing.sh --repo <git-url>` from the template directory
+- Clones the existing repo as a sibling directory; injects devcontainer infrastructure into it
+- The existing repo becomes the devcontainer workspace root (not a subdirectory)
+- `setup-environment-existing.sh` runs in the container: creates venv, .pth bridge, modifies the existing `pyproject.toml` to add ROCm exclusions, handles hatchling edge case, runs `uv sync`
+- Marker file: `.existing-project`
+
+The critical difference is that Mode 2 never creates or overwrites `pyproject.toml` — it only adds the `[tool.uv] exclude-dependencies` key if it is not already present.
 
 ### Target Hardware
 
@@ -242,12 +257,103 @@ This template is specifically designed for **consumer AMD GPUs**:
 
 ### Base Container
 
-- **Image**: `rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1` (user-verified on Strix Halo and Steam Deck)
-- **Python**: 3.12 (in `/opt/venv`, which is a virtualenv based on `/usr/bin/python3.12`)
-- **PyTorch**: 2.9.1 with ROCm support
-- Other candidates were evaluated and rejected:
-  - `rocm/pytorch-training`: Being deprecated in favor of primus
-  - `rocm/primus`: Data center only (MI300X, MI325X), overkill for single-GPU consumer hardware
+When `setup-project.sh` is run for a new project, it creates:
+```
+my-ml-project/
+├── .devcontainer/
+│   ├── devcontainer.json      # VSCode devcontainer configuration
+│   ├── Dockerfile
+│   └── setup-environment.sh
+├── .idea/                     # JetBrains configuration (if selected)
+├── configs/                   # Configuration files
+├── scripts/
+│   └── resolve-dependencies.py
+├── src/                       # Source code
+├── tests/                     # Test files
+├── models/                    # Model storage
+├── datasets/                  # Dataset storage
+├── .cache/                    # Cache directory
+└── .standalone-project        # Marker: tells setup-environment.sh to init uv project
+```
+
+When `setup-project-existing.sh` is run for an existing repo, the cloned repo gains:
+```
+my-existing-repo/              # ← your existing files stay intact
+├── .devcontainer/             # ← injected by setup-project-existing.sh
+│   ├── devcontainer.json
+│   ├── Dockerfile
+│   └── setup-environment-existing.sh
+├── .idea/                     # ← injected (if JetBrains selected)
+├── scripts/
+│   └── resolve-dependencies.py
+├── models/                    # ← created
+├── datasets/                  # ← created
+├── .cache/                    # ← created
+├── .existing-project          # ← marker: tells setup-environment-existing.sh what mode to use
+└── pyproject.toml             # ← your existing file; [tool.uv] exclude-dependencies added to it
+```
+
+## Dependency Management Philosophy
+
+### The Problem
+
+ROCm containers (like NVIDIA containers) come with pre-installed optimized libraries. Installing packages from PyPI that conflict with these can break GPU support or introduce version conflicts.
+
+### The Solution
+
+The `resolve-dependencies.py` script:
+- Reads `requirements.txt` or `pyproject.toml`
+- Compares against ROCm-provided packages
+- Creates filtered versions that skip conflicting packages
+- Installs remaining dependencies using `uv` into the system environment
+
+This preserves ROCm optimizations while allowing additional package installation.
+
+### Virtual Environment Design - CRITICAL: Python Version Matching
+
+The template uses a `.pth` bridge file approach (NOT `--system-site-packages`) to make container packages accessible while preventing accidental overwrites.
+
+**Why .pth instead of --system-site-packages:**
+- `--system-site-packages` would allow `pip install torch` to overwrite ROCm packages, even with uv's `exclude-dependencies`
+- The `.pth` file makes packages importable but doesn't affect pip's package resolution
+- This provides stronger protection against accidental overwrites via direct pip usage
+
+**CRITICAL REQUIREMENT: Python Version Must Match**
+
+The `.venv` MUST be created with `/opt/venv/bin/python` to ensure Python version consistency:
+
+- Container's `/opt/venv` uses Python 3.12 (as of ROCm 7.2 containers)
+- If `.venv` is created with a different system Python version, **binary incompatibility** breaks numpy/torch imports
+- The misleading error "importing numpy from source directory" actually means "C extension binary incompatibility"
+- Python versions cannot load `.so` files compiled for different Python versions
+
+**How It Works:**
+
+1. `setup-environment.sh` detects container Python version: `/opt/venv/bin/python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"`
+2. Creates `.venv` using that Python: `/opt/venv/bin/python -m venv .venv`
+3. Verifies versions match after creation (exits with error if mismatch detected)
+4. Creates dynamic `.pth` bridge: `.venv/lib/python3.12/site-packages/_rocm_bridge.pth` → `/opt/venv/lib/python3.12/site-packages`
+5. Python loads the .pth file and adds `/opt/venv` to sys.path
+6. Container packages (torch, numpy) become importable
+7. uv's `exclude-dependencies` still prevents installing excluded packages
+
+**Version Mismatch Detection:**
+
+The template now automatically verifies Python versions match during venv creation and will error with a clear message if they don't. This prevents the silent failure mode that causes confusing import errors later.
+
+**Common Scenario That Triggers Mismatch:**
+
+- Manually running `python3 -m venv .venv` instead of `/opt/venv/bin/python -m venv .venv`
+- The system `python3` might be a different version than the container's Python
+- This creates a venv with the wrong Python version, breaking the .pth bridge
+
+**Why This Matters for Claude Code:**
+
+When working on this template or projects created from it, remember that:
+- VSCode's Ctrl+F5 runner uses `.venv/bin/python` to execute code
+- If Python versions don't match, imports of container packages will fail
+- The error message is misleading ("importing from source directory") but the root cause is binary incompatibility
+- Always check Python versions first when debugging import errors
 
 ## ROCm-Specific Considerations
 
@@ -258,7 +364,91 @@ This template is specifically designed for **consumer AMD GPUs**:
 - **Driver Requirements**: ROCm drivers and ROCm runtime instead of NVIDIA drivers and CUDA toolkit
 - **Environment Variables**: ROCm-specific variables (e.g., `HIP_VISIBLE_DEVICES` instead of `CUDA_VISIBLE_DEVICES`)
 - **PyTorch Differences**: ROCm PyTorch builds may have different package names and dependencies
-- **Container Runtime**: Requires `--device=/dev/kfd --device=/dev/dri --group-add=video --group-add=render`
+- **Container Runtime**: May require additional Docker configuration for ROCm GPU access
+
+### Hardware Requirements
+
+**Supported Consumer Hardware**:
+- Ryzen AI Max 300 Series (includes AI Max+ 395 Strix Halo)
+- Radeon RX 7000 Series (RDNA 3) and RX 9000 Series (RDNA 4)
+- Custom configurations (e.g., Steam Deck with custom Ryzen chips)
+
+**System Requirements**:
+- Linux host with ROCm 7.2+ drivers installed (production release for consumer GPUs)
+- Docker with proper ROCm container support
+- Recommended: 32GB+ RAM, 1TB NVMe SSD
+- Check [ROCm Radeon/Ryzen compatibility matrix](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/index.html) for your specific hardware
+
+## IDE Support
+
+### VSCode
+
+- Configuration in `.devcontainer/devcontainer.json` (created by setup script)
+- Automatically detects and prompts to reopen in container
+- Extensions auto-installed (Python, Jupyter, linting, formatting)
+- Integrated terminal runs inside container with GPU access
+
+### JetBrains (PyCharm/Gateway)
+
+- Uses same `devcontainer.json` as VSCode (shared configuration)
+- Backend specified in `customizations.jetbrains.backend: "IU"` (IntelliJ IDEA Ultimate)
+- `.idea/` directory pre-configured by `setup-project.sh` with `PYTHON_MODULE` type
+  - Source roots: `src/` pre-configured as Sources, `tests/` as Test Sources
+  - Excludes: `.venv/`, `models/`, `datasets/`, `.cache/` pre-configured as Excluded
+- **Manual configuration still required for Python interpreter**:
+  1. File → Project Structure (`Ctrl+Alt+Shift+S`)
+  2. Project → SDK dropdown → Add SDK → Add Python Interpreter
+  3. Location: Local Machine, Environment: Select existing, Type: **uv**
+  4. Path to uv: `/opt/venv/bin/uv`
+  5. Environment: Select `Python 3.12 (/workspaces/PROJECT_NAME/.venv)`
+- Ruff linter/formatter enabled by default via `.idea/ruff.xml`
+
+**Python Interpreter Limitation**: JetBrains does not support automatic interpreter configuration in devcontainers ([IJPL-174150](https://youtrack.jetbrains.com/issue/IJPL-174150)). The `setup-project.sh` pre-creates `.idea/` with correct `PYTHON_MODULE` type (not `JAVA_MODULE`) so the interpreter dialog works correctly, but users must still manually configure the interpreter using the uv type.
+
+### Shared Infrastructure
+
+Both VSCode and JetBrains use:
+- Same `devcontainer.json` (or `devcontainer-existing.json`) configuration
+- Same ROCm container, GPU access, environment variables
+- Same Python venv with .pth bridge for ROCm packages
+- Both setup scripts (`setup-project.sh` and `setup-project-existing.sh`) pre-configure `.idea/` for JetBrains
+
+## Development Workflow
+
+### New Project Setup
+
+1. Download or clone the template directory
+2. Run `setup-project.sh` from within it (select IDE when prompted)
+3. Open the created directory in your IDE and reopen in container
+4. Container builds and runs `setup-environment.sh` automatically (creates venv, initializes pyproject.toml, adds ROCm exclusions, runs `uv sync`)
+
+### Existing Repository Setup
+
+1. From the template directory, run:
+   ```bash
+   ./setup-project-existing.sh --repo <git-url> --ide <vscode|jetbrains|both>
+   ```
+2. Open the cloned repo directory (sibling to the template) in your IDE
+3. Reopen in container — `setup-environment-existing.sh` runs automatically and:
+   - Creates `.venv` version-matched to the container's Python
+   - Creates the `.pth` bridge for ROCm package access
+   - Adds `[tool.uv] exclude-dependencies` to the existing `pyproject.toml`
+   - Handles the hatchling edge case (see below)
+   - Runs `uv sync`
+
+### Working with Dependencies
+
+**Modern workflow (pyproject.toml + uv):**
+```bash
+uv add transformers    # adds and installs a single package
+uv sync               # install everything in pyproject.toml
+```
+
+**Legacy workflow (requirements.txt):**
+```bash
+python scripts/resolve-dependencies.py requirements.txt
+uv pip install -r requirements-filtered.txt
+```
 
 ### Verifying GPU Access
 
@@ -270,9 +460,14 @@ amd-smi
 python -c "import torch; print(f'GPU available: {torch.cuda.is_available()}'); print(f'GPU count: {torch.cuda.device_count()}')"
 ```
 
-## IDE Support
+### Hatchling Edge Case (Existing Repos)
 
-### VSCode
+If the existing repo uses hatchling as the build backend without `[tool.hatch.build.targets.wheel]` configured, `uv sync` would fail because hatchling cannot find the package source directory. `setup-environment-existing.sh` detects this and falls back to `uv sync --no-install-project`, printing a clear explanation. To resolve it properly, add to `pyproject.toml`:
+
+```toml
+[tool.hatch.build.targets.wheel]
+packages = ["src/your_package_name"]
+```
 
 - Configuration in `.devcontainer/devcontainer.json` (created by setup script)
 - Automatically detects and prompts to reopen in container
@@ -295,7 +490,49 @@ python -c "import torch; print(f'GPU available: {torch.cuda.is_available()}'); p
   5. Environment: Select `Python 3.12 (/workspaces/PROJECT_NAME/.venv)`
 - Ruff linter/formatter enabled by default via `.idea/ruff.xml`
 
-**Python Interpreter Limitation**: JetBrains does not support automatic interpreter configuration in devcontainers ([IJPL-174150](https://youtrack.jetbrains.com/issue/IJPL-174150)).
+Comparison of AMD ROCm Docker images:
+
+- **rocm/pytorch**: General-purpose, training and inference, actively maintained ✅ **SELECTED**
+  - Works on Strix Halo and Steam Deck (user-verified)
+  - Handles both training and inference
+  - ROCm 7.2 with Python 3.12 and PyTorch 2.9.1
+
+- **rocm/pytorch-training**: Training-focused, ⚠️ being deprecated in favor of primus
+  - Not recommended for new projects
+
+- **rocm/primus**: New unified training framework
+  - Data center GPUs only (MI300X, MI325X, etc.)
+  - Overkill for single-GPU consumer hardware
+  - Designed for multi-node distributed training
+
+## Current Status
+
+Template is feature-complete with ROCm 7.2 support, including the existing-repository workflow. Ready for end-to-end testing and release preparation.
+
+- New project workflow: tested and working
+- Existing repository workflow (`setup-project-existing.sh`): tested and working (verified with `stardew-vision-training` repo, including hatchling edge case detection)
+
+## Important Resources
+
+### Official AMD Documentation
+- **[ROCm 7.2 for Radeon and Ryzen GPUs](https://rocm.docs.amd.com/projects/radeon-ryzen/en/docs-7.2/index.html)** - Primary documentation for consumer GPU support
+  - ROCm 7.2 production release notes
+  - PyTorch 2.9.1 installation for Ryzen APUs
+  - Compatibility matrices for Radeon/Ryzen hardware
+  - Framework support (PyTorch, TensorFlow, JAX, ONNX Runtime)
+- **[ROCm 7.2 Compatibility Matrix](https://rocm.docs.amd.com/projects/radeon-ryzen/en/docs-7.2/docs/compatibility/compatibilityryz/native_linux/native_linux_compatibility.html)** - Supported precision types and hardware
+
+- **[ROCm General Documentation](https://rocm.docs.amd.com/)** - Data center GPU focused (MI300X series)
+  - Training and inference guides
+  - Container documentation
+  - Framework compatibility matrices
+
+### Base Template
+- **[CUDA Template Repository](https://github.com/thesteve0/datascience-template-CUDA)** - Original NVIDIA-based template being ported
+
+### Community Resources
+- AMD Developer Discord (for consumer GPU support questions)
+- [ROCm GitHub Issues](https://github.com/ROCm/ROCm/issues) - For reporting bugs and tracking gfx1151-specific issues
 
 ## Claude Code Integration
 
